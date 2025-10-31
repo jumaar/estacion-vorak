@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VORAK - Login Estación de Pesaje</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Página de Login -->
+        <div id="login-page" class="page active">
+            <div class="auth-container">
+                <div class="auth-card">
+                    <h1 class="auth-title">Báscula VORAK</h1>
+                    <p class="auth-subtitle">Inicia sesión para acceder al sistema</p>
+
+                    <form class="auth-form" id="loginForm">
+                        <div class="input-group">
+                            <label for="clave">Clave de Vinculación</label>
+                            <input type="password" id="clave" name="clave" required>
+                        </div>
+
+                        <!-- Widget de Turnstile -->
+                        <div class="turnstile-container">
+                            <div id="turnstile-widget"></div>
+                        </div>
+
+                        <button type="submit" class="auth-button" id="loginButton" disabled>
+                            Iniciar Sesión
+                        </button>
+                    </form>
+
+                    <div class="auth-footer">
+                        <p id="login-message"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback" async defer></script>
+    <script src="app.js"></script>
+</body>
+</html>

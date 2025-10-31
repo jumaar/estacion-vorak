@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VORAK - Historial Estación de Pesaje</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Página de Historial -->
+        <div id="historial-page" class="page active">
+            <div class="products-container">
+                <div class="products-header">
+                    <h1>Historial de Empaques</h1>
+                    <p>Lista de productos procesados</p>
+                    <button id="volver-dashboard-btn" class="btn btn-secondary">Volver al Dashboard</button>
+                </div>
+                <div class="dashboard-summary">
+                    <div class="summary-card">
+                        <h3 class="card-title">Peso Actual</h3>
+                        <div class="card-value" id="peso-actual">0.00</div>
+                        <p class="card-description">kg</p>
+                    </div>
+
+                    <div class="summary-card">
+                        <h3 class="card-title">Productos Hoy</h3>
+                        <div class="card-value" id="productos-hoy">0</div>
+                        <p class="card-description">Empaques procesados</p>
+                    </div>
+
+                    <div class="summary-card">
+                        <h3 class="card-title">Peso Total</h3>
+                        <div class="card-value" id="peso-total">0.0</div>
+                        <p class="card-description">kg procesados</p>
+                    </div>
+
+                    <div class="summary-card">
+                        <h3 class="card-title">Estado</h3>
+                        <div class="card-value" id="estado-sistema">Listo</div>
+                        <p class="card-description">Sistema operativo</p>
+                    </div>
+                </div>
+
+                <div class="products-table-container">
+                    <table class="products-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Producto</th>
+                                <th>Peso</th>
+                                <th>Precio</th>
+                                <th>EPC</th>
+                                <th>Fecha</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historial-list">
+                            <tr>
+                                <td colspan="7">Cargando historial...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
