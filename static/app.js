@@ -53,6 +53,13 @@ function setupEventListeners() {
         productoSelect.addEventListener('change', handleProductoChange);
     }
 
+    // Input de producto (para manejar códigos de barras)
+    const productoInput = document.getElementById('producto-input');
+    if (productoInput) {
+        productoInput.addEventListener('input', handleProductoInput);
+        productoInput.addEventListener('keydown', handleProductoInputKeydown);
+    }
+
     // Botones de navegación
     const pesarBtn = document.getElementById('pesar-btn');
     if (pesarBtn) {
@@ -625,11 +632,26 @@ async function handlePesar() {
         await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
+    // Obtener el EPC del input si está disponible
+    const productoInput = document.getElementById('producto-input');
+    const epcIngresado = productoInput ? productoInput.value.trim() : '';
+
+    // Validar que el EPC tenga un formato válido (al menos 10 caracteres para códigos EPC)
+    if (epcIngresado && epcIngresado.length < 10) {
+        showMessage('El código EPC debe tener al menos 10 caracteres.', 'error');
+        return;
+    }
+
     // Construir el objeto de empaque
     const empaque = {
         id_producto: parseInt(selectedProductoId),
         peso_g: appState.pesoActual
     };
+
+    // Añadir EPC si se proporcionó en el input
+    if (epcIngresado) {
+        empaque.epc = epcIngresado;
+    }
 
     // Enviar a través de WebSocket y esperar respuesta
     if (appState.socket && appState.socket.connected) {
@@ -679,7 +701,7 @@ async function handlePesar() {
             // Procesar la respuesta
             if (response.creados > 0 && response.empaques && response.empaques.length > 0) {
                 const empaqueCreado = response.empaques[0];
-                showMessage(`Empaque creado exitosamente. EPC: ${empaqueCreado.epc}`, 'success');
+                showMessage(`Empaque creado exitosamente. EPC: ${empaqueCreado.epc}`, 'success', 8000);
 
                 // Actualizar la UI con los datos del empaque creado
                 updateUltimoEmpaque({
@@ -691,14 +713,41 @@ async function handlePesar() {
                     fecha_creacion: new Date().toISOString()
                 });
 
+                // Limpiar el input después de un pesaje exitoso
+                const productoInput = document.getElementById('producto-input');
+                if (productoInput) {
+                    productoInput.value = '';
+                }
+
                 // Actualizar estadísticas
                 updateDashboardStats();
+
+                // Enfocar el input después de presionar PESAR
+                setTimeout(() => {
+                    if (productoInput) {
+                        productoInput.focus();
+                    }
+                }, 100);
             }
 
             if (response.errores && response.errores.length > 0) {
                 console.warn('Errores en la creación de empaques:', response.errores);
                 response.errores.forEach(error => {
-                    showMessage(`Error: ${error.mensaje}`, 'error');
+                    let mensajeError = '';
+                    if (error.code === 'EPC_DUPLICADO') {
+                        mensajeError = `EPC duplicado: ${error.epc}. Este código ya existe en el sistema.`;
+                        // Limpiar el input cuando hay EPC duplicado
+                        const productoInput = document.getElementById('producto-input');
+                        if (productoInput) {
+                            productoInput.value = '';
+                            setTimeout(() => {
+                                productoInput.focus();
+                            }, 100);
+                        }
+                    } else {
+                        mensajeError = `Error: ${error.error || error.mensaje}`;
+                    }
+                    showMessage(mensajeError, 'error', 8000); // 8 segundos para errores
                 });
             }
 
@@ -718,16 +767,61 @@ function handleProductoChange() {
     const productoSelect = document.getElementById('producto-select');
     const productoSeleccionadoDiv = document.getElementById('producto-seleccionado');
     const productoTexto = productoSeleccionadoDiv.querySelector('.producto-texto');
-    
+    const productoInput = document.getElementById('producto-input');
+
     const selectedOption = productoSelect.options[productoSelect.selectedIndex];
-    
+
     if (productoSelect.value && selectedOption.text) {
         // Mostrar el producto seleccionado en formato "nombre - peso"
         productoTexto.textContent = selectedOption.text;
         productoTexto.classList.add('seleccionado');
+
+        // Limpiar el input cuando se cambia de producto
+        if (productoInput) {
+            productoInput.value = '';
+        }
+
+        // Enfocar el input después de seleccionar un producto
+        setTimeout(() => {
+            if (productoInput) {
+                productoInput.focus();
+            }
+        }, 100);
     } else {
         productoTexto.textContent = 'Ningún producto seleccionado';
         productoTexto.classList.remove('seleccionado');
+    }
+}
+
+// Manejar entrada de texto en el input de producto
+function handleProductoInput(event) {
+    const input = event.target;
+    const value = input.value;
+
+    // Si el valor contiene un salto de línea (Enter), procesar el código
+    if (value.includes('\n') || value.includes('\r')) {
+        // Extraer solo el código antes del Enter
+        const cleanValue = value.replace(/[\r\n]+/g, '').trim();
+        input.value = cleanValue;
+    }
+}
+
+// Variable para controlar el estado de lectura de códigos
+let lastCodeTime = 0;
+
+// Manejar eventos de teclado en el input de producto
+function handleProductoInputKeydown(event) {
+    const input = event.target;
+
+    // Si se presiona Enter, procesar el código completo
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        const value = input.value.trim();
+
+        // Si hay un valor, mantenerlo limpio
+        if (value) {
+            input.value = value;
+        }
     }
 }
 
@@ -793,7 +887,7 @@ function renderHistorialTable() {
 }
 
 // Mostrar mensajes
-function showMessage(message, type = 'info') {
+function showMessage(message, type = 'info', duration = 5000) {
     let messageElement;
 
     if (appState.currentPage === 'login') {
@@ -809,12 +903,12 @@ function showMessage(message, type = 'info') {
         messageElement.textContent = message;
         document.body.appendChild(messageElement);
 
-        // Remover después de 5 segundos
+        // Remover después del tiempo especificado (por defecto 5 segundos)
         setTimeout(() => {
             if (messageElement.parentNode) {
                 messageElement.parentNode.removeChild(messageElement);
             }
-        }, 5000);
+        }, duration);
     }
 }
 

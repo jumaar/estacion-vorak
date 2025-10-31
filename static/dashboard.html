@@ -16,9 +16,12 @@
                 
                 <div class="controls-section">
                     <div class="form-group">
-                        <select id="producto-select" name="producto">
-                            <option value="">Cargando productos...</option>
-                        </select>
+                        <div class="select-input-container">
+                            <select id="producto-select" name="producto">
+                                <option value="">Cargando productos...</option>
+                            </select>
+                            <input type="text" id="producto-input" placeholder="Ingrese cantidad o nota..." maxlength="24" />
+                        </div>
                     </div>
                     
                     <div id="producto-seleccionado" class="producto-seleccionado">
