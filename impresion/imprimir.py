@@ -54,6 +54,21 @@ def imprimir_etiqueta(fecha_hora, fecha_vencimiento, peso_g, precio_total):
     import logging
     logger = logging.getLogger(__name__)
 
+    # --- CONSTANTES DE CALIBRACIÓN ---
+    TAMANO_NORMAL = 36
+    TAMANO_GRANDE = 54
+    TAMANO_PEQUENO = 20
+    TAMANO_MEDIO = 25
+    TAMANO_GRANDE_VENC = 25
+
+    x_pos = 5  # Más cerca del borde izquierdo
+    y_pos = 15  # Más margen superior para centrar mejor
+    linea_alto_normal = TAMANO_NORMAL + 8  # Más espacio entre líneas
+    linea_alto_pequeno = TAMANO_PEQUENO + 6
+    linea_alto_medio = TAMANO_MEDIO + 6
+    linea_alto_grande_venc = TAMANO_GRANDE_VENC + 6
+    # --- FIN CONSTANTES ---
+
     # Verificar estado de la impresora antes de proceder
     if not verificar_estado_impresora(PUERTO_COM, VELOCIDAD_BAUD):
         logger.error("Impresora no conectada o no disponible")
@@ -63,9 +78,6 @@ def imprimir_etiqueta(fecha_hora, fecha_vencimiento, peso_g, precio_total):
     d = ImageDraw.Draw(img)
 
     # Fuentes - PIL crea la imagen bitmap que la impresora interpreta como imagen
-    TAMANO_NORMAL = 36
-    TAMANO_GRANDE = 54
-
     # Intentar cargar fuentes del sistema
     try:
         # Buscar fuentes disponibles en el sistema
@@ -85,35 +97,22 @@ def imprimir_etiqueta(fecha_hora, fecha_vencimiento, peso_g, precio_total):
         if font_normal_path:
             font_normal = ImageFont.truetype(font_normal_path, TAMANO_NORMAL)
             font_grande = ImageFont.truetype(font_normal_path, TAMANO_GRANDE)
+            font_pequeno = ImageFont.truetype(font_normal_path, TAMANO_PEQUENO)
+            font_medio = ImageFont.truetype(font_normal_path, TAMANO_MEDIO)
+            font_grande_venc = ImageFont.truetype(font_normal_path, TAMANO_GRANDE_VENC)
         else:
             font_normal = ImageFont.load_default()
             font_grande = ImageFont.load_default()
+            font_pequeno = ImageFont.load_default()
+            font_medio = ImageFont.load_default()
+            font_grande_venc = ImageFont.load_default()
 
     except Exception as e:
         font_normal = ImageFont.load_default()
         font_grande = ImageFont.load_default()
-   
-    x_pos = 5  # Más cerca del borde izquierdo
-    y_pos = 15  # Más margen superior para centrar mejor
-    linea_alto_normal = TAMANO_NORMAL + 8  # Más espacio entre líneas
-
-    # Fuentes adicionales para debugging
-    TAMANO_PEQUENO = 20
-    TAMANO_MEDIO = 25
-    TAMANO_GRANDE_VENC = 25
-
-    try:
-        font_pequeno = ImageFont.truetype(font_normal_path, TAMANO_PEQUENO) if font_normal_path else ImageFont.load_default()
-        font_medio = ImageFont.truetype(font_normal_path, TAMANO_MEDIO) if font_normal_path else ImageFont.load_default()
-        font_grande_venc = ImageFont.truetype(font_normal_path, TAMANO_GRANDE_VENC) if font_normal_path else ImageFont.load_default()
-    except:
         font_pequeno = ImageFont.load_default()
         font_medio = ImageFont.load_default()
         font_grande_venc = ImageFont.load_default()
-
-    linea_alto_pequeno = TAMANO_PEQUENO + 6
-    linea_alto_medio = TAMANO_MEDIO + 6
-    linea_alto_grande_venc = TAMANO_GRANDE_VENC + 6
 
     # Línea 1: "Fecha:" (pequeño 20pt)
     d.text((x_pos, y_pos), "Fecha de empaque:", font=font_pequeno, fill=0)
@@ -153,77 +152,20 @@ def imprimir_etiqueta(fecha_hora, fecha_vencimiento, peso_g, precio_total):
             rtscts=False,
             xonxoff=False
         )
-        
-        time.sleep(0.1)
 
-        try:
-            ser.write(b"CLS\n")
-            ser.flush()
-            time.sleep(0.05)
-        except Exception as e:
-            logger.error(f"Error enviando CLS: {e}")
-            raise
-
-        try:
-            ser.write(b"SIZE 40 mm, 30 mm\n")
-            ser.flush()
-            time.sleep(0.05)
-        except Exception as e:
-            logger.error(f"Error enviando SIZE: {e}")
-            raise
-
-        try:
-            ser.write(b"GAP 0, 0\n")
-            ser.flush()
-            time.sleep(0.05)
-        except Exception as e:
-            logger.error(f"Error enviando GAP: {e}")
-            raise
-
-        try:
-            ser.write(b"DENSITY 15\n")
-            ser.flush()
-            time.sleep(0.05)
-        except Exception as e:
-            logger.error(f"Error enviando DENSITY: {e}")
-            raise
+        ser.write(b"CLS\n")
+        ser.write(b"SIZE 40 mm, 30 mm\n")
+        ser.write(b"GAP 0, 0\n")
+        ser.write(b"DENSITY 15\n")
 
         X_OFFSET = -30
         comando_header = f"BITMAP {X_OFFSET}, 0, {ANCHO_BYTES}, {ALTO_DOTS}, 0, ".encode('ascii')
 
-        try:
-            ser.write(comando_header)
-            ser.flush()
-            time.sleep(0.05)
-        except Exception as e:
-            logger.error(f"Error enviando header: {e}")
-            raise
+        ser.write(comando_header)
+        ser.write(datos_bitmap)
+        ser.write(b"\n")
+        ser.write(b"PRINT 1\n")
 
-        try:
-            ser.write(datos_bitmap)
-            ser.flush()
-            time.sleep(0.1)
-        except Exception as e:
-            logger.error(f"Error enviando datos bitmap: {e}")
-            raise
-
-        try:
-            ser.write(b"\n")
-            ser.flush()
-            time.sleep(0.05)
-        except Exception as e:
-            logger.error(f"Error enviando fin de línea: {e}")
-            raise
-
-        try:
-            ser.write(b"PRINT 1\n")
-            ser.flush()
-            time.sleep(0.05)
-        except Exception as e:
-            logger.error(f"Error enviando comando PRINT: {e}")
-            raise
-
-        time.sleep(1)
         ser.close()
         return True
 
