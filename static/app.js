@@ -37,6 +37,17 @@ function initializeApp() {
     setupEventListeners();
     checkExistingSession();
     displayStationInfo(); // Mostrar información de la estación si está disponible
+    
+    // Si estamos en la página de historial, cargar los productos de la estación
+    if (window.location.pathname.includes('/historial')) {
+        console.log('initializeApp: Detectada página de historial, programando carga de productos');
+        // Cargar productos de la estación sin depender de conexiones WebSocket
+        setTimeout(loadProductosEstacion, 500);
+    } else if (window.location.pathname.includes('/dashboard')) {
+        // Solo conectar WebSockets en el dashboard
+        connectWebSocket();
+        connectFlaskWebSocket(); // Conectar también a Flask para recibir datos de peso
+    }
 }
 
 // Configurar event listeners
@@ -68,7 +79,12 @@ function setupEventListeners() {
 
     const historialBtn = document.getElementById('historial-btn');
     if (historialBtn) {
-        historialBtn.addEventListener('click', () => navigateToPage('historial'));
+        historialBtn.addEventListener('click', () => {
+            console.log('historialBtn: Botón de historial clickeado, navegando a página de historial');
+            navigateToPage('historial');
+            // Cargar productos de la estación inmediatamente después de navegar
+            setTimeout(loadProductosEstacion, 100);
+        });
     }
 
     const volverDashboardBtn = document.getElementById('volver-dashboard-btn');
@@ -95,8 +111,11 @@ function checkExistingSession() {
         if (isLoginPage) {
             navigateToPage('dashboard');
         } else if (isProtectedPage) {
-            connectWebSocket();
-            connectFlaskWebSocket(); // Conectar también a Flask para recibir datos de peso
+            // Conectar WebSockets solo en el dashboard
+            if (window.location.pathname.includes('/dashboard')) {
+                connectWebSocket();
+                connectFlaskWebSocket(); // Conectar también a Flask para recibir datos de peso
+            }
         }
     } else {
         // Si NO hay sesión y estamos intentando acceder a una página protegida, redirigir a login
@@ -312,10 +331,6 @@ async function handleLogin(event) {
             
             // Navegar al dashboard
             navigateToPage('dashboard');
-            
-            // Conectar WebSockets después de navegar
-            connectWebSocket();
-            connectFlaskWebSocket(); // Conectar también a Flask para recibir datos de peso
         } else {
             const errorData = await response.json().catch(() => ({ detail: 'Error de autenticación' }));
             showMessage(errorData.detail || 'Error de autenticación', 'error');
@@ -429,7 +444,7 @@ async function connectWebSocket() {
         });
 
         appState.socket.on('disconnect', () => {
-            logInteraction('Desconectado del servidor NestJS', 'error');
+            console.log('Desconectado del servidor NestJS');
         });
 
     } catch (error) {
@@ -629,7 +644,7 @@ async function handlePesar() {
         connectWebSocket();
 
         // Esperar un poco para que se conecte
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 100));
     }
 
     // Obtener el EPC del input si está disponible
@@ -742,7 +757,7 @@ async function handlePesar() {
                             productoInput.value = '';
                             setTimeout(() => {
                                 productoInput.focus();
-                            }, 100);
+                            }, 10);
                         }
                     } else {
                         mensajeError = `Error: ${error.error || error.mensaje}`;
@@ -839,6 +854,159 @@ function updateUltimoEmpaque(empaque) {
             <p><strong>Fecha:</strong> ${new Date(empaque.fecha_creacion).toLocaleString()}</p>
         </div>
     `;
+}
+
+// Cargar historial de productos de la estación
+async function loadProductosEstacion() {
+    console.log('loadProductosEstacion: Iniciando carga de productos de la estación');
+    try {
+        // Obtener el ID de la estación del estado de la aplicación
+        const estacionInfo = sessionStorage.getItem('vorak_estacion_info');
+        if (!estacionInfo) {
+            console.log('loadProductosEstacion: No se encontró información de la estación en sessionStorage');
+            showMessage('No se encontró información de la estación', 'error');
+            return;
+        }
+        
+        const estacion = JSON.parse(estacionInfo);
+        console.log('loadProductosEstacion: Información de estación obtenida', estacion);
+        const estacionId = estacion.id_estacion;
+        
+        // Obtener la URL base del backend NestJS
+        const configResponse = await fetch('/api/backend-config');
+        if (!configResponse.ok) {
+            console.log('loadProductosEstacion: No se pudo obtener la configuración del servidor');
+            showMessage('No se pudo obtener la configuración del servidor', 'error');
+            return;
+        }
+        const configData = await configResponse.json();
+        const nestjsApiBaseUrl = configData.nestjs_api_base_url;
+        console.log('loadProductosEstacion: URL del backend NestJS obtenida', nestjsApiBaseUrl);
+        
+        // Hacer la petición HTTP para obtener los productos de la estación
+        console.log('loadProductosEstacion: Haciendo petición a', `${nestjsApiBaseUrl}/api/frigorifico/estacion/${estacionId}`);
+        const response = await fetch(`${nestjsApiBaseUrl}/api/frigorifico/estacion/${estacionId}`, {
+            method: 'GET',
+            credentials: 'include', // Para enviar cookies HttpOnly
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+        console.log('loadProductosEstacion: Petición completada con status', response.status);
+        
+        if (response.status === 401) {
+            console.log('loadProductosEstacion: No autorizado (401), redirigiendo al logout');
+            showMessage('No autorizado. Por favor inicie sesión nuevamente.', 'error');
+            logout();
+            return;
+        }
+        
+        if (!response.ok) {
+            console.log('loadProductosEstacion: Petición no exitosa', response.status);
+            throw new Error(`Error en la petición: ${response.status}`);
+        }
+        
+        console.log('loadProductosEstacion: Datos recibidos exitosamente');
+        const data = await response.json();
+        
+        // Procesar la respuesta para calcular totales
+        let totalProductos = 0;
+        let totalPeso = 0;
+        
+        data.productos.forEach(producto => {
+            totalProductos += producto.cantidad_total;
+            producto.empaques.forEach(empaque => {
+                totalPeso += parseFloat(empaque.peso_g);
+            });
+        });
+        
+        // Actualizar los totales en la UI
+        const productosHoyElement = document.getElementById('productos-hoy');
+        const pesoTotalElement = document.getElementById('peso-total');
+        
+        if (productosHoyElement) {
+            productosHoyElement.textContent = totalProductos;
+        }
+        
+        if (pesoTotalElement) {
+            // Convertir de gramos a kilogramos para mostrar
+            pesoTotalElement.textContent = (totalPeso / 1000).toFixed(2);
+        }
+        
+        // Renderizar la tabla de productos con desplegables
+        renderProductosTable(data.productos);
+        
+    } catch (error) {
+        console.error('Error cargando productos de la estación:', error);
+        showMessage('Error cargando productos de la estación', 'error');
+    }
+}
+
+// Renderizar tabla de productos con desplegables de empaques
+function renderProductosTable(productos) {
+    const tbody = document.getElementById('historial-list');
+    if (!tbody) return;
+
+    if (productos.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7">No hay productos registrados</td></tr>';
+        return;
+    }
+
+    let tableHTML = '';
+
+    productos.forEach(producto => {
+        // Fila principal del producto
+        tableHTML += `
+            <tr class="producto-row">
+                <td>${producto.id_producto}</td>
+                <td>${producto.nombre_producto}</td>
+                <td>${producto.cantidad_total}</td>
+                <td>$${producto.empaques.reduce((sum, empaque) => sum + parseFloat(empaque.precio_venta_total), 0).toFixed(2)}</td>
+                <td colspan="3">
+                    <button class="toggle-empaques-btn" data-producto-id="${producto.id_producto}">
+                        Ver ${producto.empaques.length} empaques ▼
+                    </button>
+                </td>
+            </tr>
+        `;
+
+        // Filas de empaques (inicialmente ocultas)
+        producto.empaques.forEach((empaque, index) => {
+            tableHTML += `
+                <tr class="empaque-row" data-producto-id="${producto.id_producto}" style="display: none;">
+                    <td>${producto.id_producto}</td>
+                    <td>${producto.nombre_producto}</td>
+                    <td>${empaque.peso_g}g</td>
+                    <td>$${empaque.precio_venta_total}</td>
+                    <td>${empaque.epc}</td>
+                    <td>${new Date(empaque.fecha_empaque).toLocaleString()}</td>
+                    <td><span class="status-chip status-active">Empaque</span></td>
+                </tr>
+            `;
+        });
+    });
+
+    tbody.innerHTML = tableHTML;
+
+    // Añadir event listeners para los botones de toggle
+    document.querySelectorAll('.toggle-empaques-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const productoId = this.getAttribute('data-producto-id');
+            const empaqueRows = document.querySelectorAll(`.empaque-row[data-producto-id="${productoId}"]`);
+            
+            empaqueRows.forEach(row => {
+                if (row.style.display === 'none') {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+            
+            // Cambiar el texto del botón según el estado
+            const isVisible = empaqueRows[0] && empaqueRows[0].style.display !== 'none';
+            this.innerHTML = isVisible ? `Ocultar empaques ▲` : `Ver ${empaqueRows.length} empaques ▼`;
+        });
+    });
 }
 
 // Cargar historial

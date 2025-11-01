@@ -7,6 +7,7 @@ from dotenv import load_dotenv # pyright: ignore[reportMissingImports]
 import logging
 import threading
 import time
+import subprocess
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), 'impresion'))
 from imprimir import imprimir_etiqueta, verificar_estado_impresora # type: ignore
@@ -185,6 +186,24 @@ def manage_impresora_connection(state, socketio_instance):
 bascula_thread = threading.Thread(target=manage_bascula_connection, args=(hardware_state, socketio), daemon=True)
 bascula_thread.start()
 
+def check_rfid_device_connected():
+    """
+    Verifica si el dispositivo RFID/TAG (que actúa como teclado USB) está conectado.
+    Busca un dispositivo USB con el Vendor ID y Product ID específicos.
+    """
+    try:
+        # ID de Vendedor (Vendor ID) y ID de Producto (Product ID) del lector RFID
+        vendor_id = "1a86"
+        product_id = "e010"
+        
+        # Ejecuta 'lsusb' y busca el dispositivo
+        result = subprocess.run(['lsusb'], capture_output=True, text=True, check=True)
+        return f"{vendor_id}:{product_id}" in result.stdout
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # Si 'lsusb' no existe o falla, asumimos que no está conectado
+        app.logger.error("No se pudo ejecutar 'lsusb' para verificar el lector RFID.")
+        return False
+
 def manage_rfid_connection(state, socketio_instance):
     """
     Función que se ejecuta en un hilo. Verifica periódicamente el estado
@@ -194,9 +213,8 @@ def manage_rfid_connection(state, socketio_instance):
 
     while True:
         try:
-            # Verificar estado del RFID (placeholder - implementar según hardware)
-            # Por ahora simulamos que está conectado
-            estado_actual = True  # Cambiar por verificación real
+            # Verificar si el dispositivo RFID está conectado usando su ID de USB
+            estado_actual = check_rfid_device_connected()
 
             with state["lock"]:
                 state["rfid_conectado"] = estado_actual
