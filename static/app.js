@@ -546,6 +546,17 @@ function connectFlaskWebSocket() {
         updateStatusIndicators();
     });
 
+    // Escuchar eventos de estado de la impresión
+    appState.flaskSocket.on('impresion_completada', (data) => {
+        console.log('Evento de impresión completada:', data.mensaje);
+        showMessage(data.mensaje, 'success');
+    });
+
+    appState.flaskSocket.on('impresion_error', (data) => {
+        console.error('Evento de error de impresión:', data.error);
+        showMessage(data.error, 'error');
+    });
+
     appState.flaskSocket.on('disconnect', (reason) => {
         console.log('Desconectado del servidor Flask:', reason);
     });

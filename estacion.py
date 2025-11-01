@@ -12,6 +12,7 @@ import logging
 import threading
 import time
 import subprocess
+import queue
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'impresion'))
@@ -49,6 +50,7 @@ hardware_state = {
     "rfid_conectado": False,  # Nuevo estado para RFID/TAG
     "lock": threading.Lock() # Para acceso seguro entre hilos
 }
+print_queue = queue.Queue() # Cola para los trabajos de impresión
 
 # --- Configuración de dispositivos ---
 IMPRESORA_PUERTO = "/dev/rfcomm0"
@@ -259,6 +261,76 @@ impresora_thread.start()
 rfid_thread = threading.Thread(target=manage_rfid_connection, args=(hardware_state, socketio), daemon=True)
 rfid_thread.start()
 # Eventos de SocketIO para logs de conexión
+
+def manage_print_queue(state, socketio_instance):
+    """
+    Función que se ejecuta en un hilo. Procesa la cola de impresión.
+    Maneja la conexión con la impresora de forma centralizada.
+    """
+    while True:
+        ser = None  # Inicializamos ser a None en cada iteración
+        print_job = print_queue.get() # Espera bloqueante hasta que haya un trabajo
+
+        try:
+            # Verificar si la impresora está conectada antes de intentar imprimir
+            with state["lock"]:
+                if not state["impresora_conectada"]:
+                    app.logger.error("Trabajo de impresión descartado: Impresora no conectada.")
+                    socketio_instance.emit('impresion_error', {'error': 'Impresora no conectada'})
+                    continue # Salta al finally y luego a la siguiente iteración
+
+            # Abrir el puerto serial para este trabajo de impresión específico
+            app.logger.info("Abriendo puerto serial para impresión...")
+            ser = serial.Serial(
+                port=IMPRESORA_PUERTO,
+                baudrate=IMPRESORA_BAUDRATE,
+                bytesize=8, parity='N', stopbits=1,
+                timeout=2, # Timeout de escritura y lectura
+                write_timeout=5, # Aumentamos el timeout de escritura a 5s para más tolerancia
+                dsrdtr=False, rtscts=False, xonxoff=True # Habilitar control de flujo por software
+            )
+
+            # Limpiar buffers de entrada y salida para asegurar un estado limpio
+            # Esto es crucial para recuperarse de posibles estados inconsistentes anteriores.
+            ser.reset_input_buffer()
+            ser.reset_output_buffer()
+
+            app.logger.info("Enviando comandos de impresión...")
+
+            # Imprimir usando la conexión abierta
+            imprimir_etiqueta(
+                ser,
+                print_job['fecha_hora'],
+                print_job['fecha_vencimiento'],
+                print_job['peso'],
+                print_job['precio_total']
+            )
+            
+            # Esperar a que todos los datos se envíen antes de continuar
+            ser.flush()
+
+            app.logger.info(f"Trabajo de impresión completado para el peso: {print_job['peso']}g")
+            socketio_instance.emit('impresion_completada', {'mensaje': 'Etiqueta impresa exitosamente'})
+
+        except serial.SerialException as e:
+            app.logger.error(f"Error de puerto serial en el hilo de impresión: {e}")
+            socketio_instance.emit('impresion_error', {'error': 'Error de comunicación con la impresora'})
+            # Pausa larga para permitir que el dispositivo se recupere del error
+            time.sleep(3)
+        except Exception as e:
+            app.logger.error(f"Error inesperado en el hilo de impresión: {e}")
+            socketio_instance.emit('impresion_error', {'error': 'Error interno en el proceso de impresión'})
+        finally:
+            # Asegurarse de que el puerto se cierre siempre, incluso si falla
+            if ser and ser.is_open:
+                app.logger.info("Cerrando puerto serial de impresión.")
+                ser.close()
+            # Marcar la tarea como completada en la cola
+            print_queue.task_done()
+            # Pausa de 500ms para darle un respiro al hardware de la impresora
+            time.sleep(2)
+
+
 @socketio.on('connect')
 def handle_connect():
     # Emitir el estado actual de los componentes al nuevo cliente
@@ -346,7 +418,8 @@ def imprimir_etiqueta_endpoint():
             return jsonify({"error": "Peso no válido en la báscula"}), 400
 
         # Preparar datos para impresión
-        fecha_hora = datetime.now().strftime("%d/%m/%Y %H:%M")
+        now = datetime.now()
+        fecha_hora = f"{now.day}/{now.month}/{now.year}, {now.hour:02d}:{now.minute:02d}"
         fecha_vencimiento = empaque.get('fecha_vencimiento', 'N/A')
         precio_total = empaque.get('precio_venta_total', 0)
 
@@ -380,27 +453,22 @@ def handle_imprimir_etiqueta(data):
             emit('impresion_error', {'error': 'Peso no válido en la báscula'})
             return
 
-        # Preparar datos para impresión
-        fecha_hora = data.get('fecha_hora', datetime.now().strftime("%d/%m/%Y %H:%M"))
-        fecha_vencimiento = data.get('fecha_vencimiento', 'N/A')
-        precio_total = data.get('precio_total', 0)
+        # Preparar datos para el trabajo de impresión
+        now = datetime.now()
+        print_job = {
+            'fecha_hora': f"{now.day}/{now.month}/{now.year}, {now.hour:02d}:{now.minute:02d}",
+            'fecha_vencimiento': data.get('fecha_vencimiento', 'N/A'),
+            'precio_total': data.get('precio_total', 0),
+            'peso': peso_actual
+        }
 
-        # Imprimir etiqueta
-        exito = imprimir_etiqueta(fecha_hora, fecha_vencimiento, peso_actual, precio_total)
-
-        if exito:
-            emit('impresion_completada', {'mensaje': 'Etiqueta impresa exitosamente'})
-        else:
-            app.logger.error("Error al imprimir etiqueta")
-            emit('impresion_error', {'error': 'Error al imprimir etiqueta'})
+        # Añadir el trabajo a la cola en lugar de imprimir directamente
+        print_queue.put(print_job)
+        app.logger.info("Nuevo trabajo de impresión añadido a la cola.")
 
     except Exception as e:
         app.logger.error(f"Error en impresión: {e}")
         emit('impresion_error', {'error': 'Error interno del servidor'})
-
-
-
-
 
 # --- Punto de Entrada ---
 if __name__ == "__main__":
@@ -408,6 +476,10 @@ if __name__ == "__main__":
     host = os.getenv("HOST")  # Valor por defecto para host
     debug_mode = os.getenv("FLASK_DEBUG", "False").lower() == "true"
     try:
+        # Iniciar el hilo consumidor de la cola de impresión
+        print_thread = threading.Thread(target=manage_print_queue, args=(hardware_state, socketio), daemon=True)
+        print_thread.start()
+
         # Usar eventlet como servidor WSGI para mejor manejo de WebSocket
         socketio.run(app, host=host, port=port, debug=debug_mode, use_reloader=False)
     except KeyboardInterrupt:

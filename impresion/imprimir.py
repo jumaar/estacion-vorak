@@ -41,19 +41,17 @@ ALTO_DOTS = 240  # 30mm
 ANCHO_BYTES = ANCHO_DOTS // 8 # ¡Siempre 8!
 # --------------------------------
 
-def imprimir_etiqueta(fecha_hora, fecha_vencimiento, peso_g, precio_total):
+def imprimir_etiqueta(ser, fecha_hora, fecha_vencimiento, peso_g, precio_total):
     """
-    Función para imprimir etiqueta con datos dinámicos.
+    Función para generar los comandos de impresión y enviarlos a través de una conexión serial abierta.
 
     Args:
+        ser (serial.Serial): Objeto de conexión serial ya abierto y configurado.
         fecha_hora (str): Fecha y hora actual
         fecha_vencimiento (str): Fecha de vencimiento
         peso_g (int): Peso en gramos
         precio_total (float): Precio total de venta
     """
-    import logging
-    logger = logging.getLogger(__name__)
-
     # --- CONSTANTES DE CALIBRACIÓN ---
     TAMANO_NORMAL = 36
     TAMANO_GRANDE = 54
@@ -68,11 +66,6 @@ def imprimir_etiqueta(fecha_hora, fecha_vencimiento, peso_g, precio_total):
     linea_alto_medio = TAMANO_MEDIO + 6
     linea_alto_grande_venc = TAMANO_GRANDE_VENC + 6
     # --- FIN CONSTANTES ---
-
-    # Verificar estado de la impresora antes de proceder
-    if not verificar_estado_impresora(PUERTO_COM, VELOCIDAD_BAUD):
-        logger.error("Impresora no conectada o no disponible")
-        return False
 
     img = Image.new('1', (ANCHO_DOTS, ALTO_DOTS), 255)
     d = ImageDraw.Draw(img)
@@ -139,41 +132,16 @@ def imprimir_etiqueta(fecha_hora, fecha_vencimiento, peso_g, precio_total):
 
     datos_bitmap = img.tobytes()
 
-    # --- 2. Enviar los comandos a la impresora ---
-    try:
-        ser = serial.Serial(
-            port=PUERTO_COM,
-            baudrate=VELOCIDAD_BAUD,
-            bytesize=8,
-            parity='N',
-            stopbits=1,
-            timeout=2,
-            dsrdtr=False,
-            rtscts=False,
-            xonxoff=False
-        )
+    # --- Enviar los comandos a la impresora a través de la conexión proporcionada ---
+    ser.write(b"CLS\n")
+    ser.write(b"SIZE 40 mm, 30 mm\n")
+    ser.write(b"GAP 0, 0\n")
+    ser.write(b"DENSITY 15\n")
 
-        ser.write(b"CLS\n")
-        ser.write(b"SIZE 40 mm, 30 mm\n")
-        ser.write(b"GAP 0, 0\n")
-        ser.write(b"DENSITY 15\n")
+    X_OFFSET = -30
+    comando_header = f"BITMAP {X_OFFSET}, 0, {ANCHO_BYTES}, {ALTO_DOTS}, 0, ".encode('ascii')
 
-        X_OFFSET = -30
-        comando_header = f"BITMAP {X_OFFSET}, 0, {ANCHO_BYTES}, {ALTO_DOTS}, 0, ".encode('ascii')
-
-        ser.write(comando_header)
-        ser.write(datos_bitmap)
-        ser.write(b"\n")
-        ser.write(b"PRINT 1\n")
-
-        ser.close()
-        return True
-
-    except serial.SerialException as e:
-        logger.error(f"Error de conexión serial: {e}")
-        return False
-    except Exception as e:
-        logger.error(f"Error durante la impresión: {e}")
-        import traceback
-        logger.error(f"Traceback completo: {traceback.format_exc()}")
-        return False
+    ser.write(comando_header)
+    ser.write(datos_bitmap)
+    ser.write(b"\n")
+    ser.write(b"PRINT 1\n")
