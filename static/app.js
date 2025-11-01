@@ -1,9 +1,3 @@
-/**
- * VORAK Estación de Pesaje - Frontend SPA
- * Aplicación JavaScript para la interfaz de usuario
- */
-
-// Estado global de la aplicación
 let appState = {
     socket: null, // Socket.IO instance para NestJS
     flaskSocket: null, // Socket.IO instance para Flask
@@ -42,11 +36,17 @@ function initializeApp() {
     if (window.location.pathname.includes('/historial')) {
         console.log('initializeApp: Detectada página de historial, programando carga de productos');
         // Cargar productos de la estación sin depender de conexiones WebSocket
-        setTimeout(loadProductosEstacion, 500);
+        loadProductosEstacion();
     } else if (window.location.pathname.includes('/dashboard')) {
         // Solo conectar WebSockets en el dashboard
-        connectWebSocket();
-        connectFlaskWebSocket(); // Conectar también a Flask para recibir datos de peso
+        console.log('initializeApp: Detectado dashboard, conectando WebSockets.');
+        // Asegurar que no haya conexiones activas antes de conectar
+        if (!appState.socket || !appState.socket.connected) {
+            connectWebSocket();
+        }
+        if (!appState.flaskSocket || !appState.flaskSocket.connected) {
+            connectFlaskWebSocket();
+        }
     }
 }
 
@@ -110,12 +110,6 @@ function checkExistingSession() {
         appState.estacionInfo = JSON.parse(estacionInfo);
         if (isLoginPage) {
             navigateToPage('dashboard');
-        } else if (isProtectedPage) {
-            // Conectar WebSockets solo en el dashboard
-            if (window.location.pathname.includes('/dashboard')) {
-                connectWebSocket();
-                connectFlaskWebSocket(); // Conectar también a Flask para recibir datos de peso
-            }
         }
     } else {
         // Si NO hay sesión y estamos intentando acceder a una página protegida, redirigir a login
@@ -158,19 +152,35 @@ function displayStationInfo() {
 }
 
 // Navegación entre páginas
-function navigateToPage(pageName) {
+async function navigateToPage(pageName) {
     if (window.location.pathname.includes(pageName)) {
         return;
     }
 
-    if (pageName === 'dashboard') {
-        window.location.href = '/dashboard';
-    } else if (pageName === 'historial') {
-        window.location.href = '/historial';
-    } else if (pageName === 'login') {
-        window.location.href = '/login';
-    } else {
-        console.error(`Página desconocida: ${pageName}`);
+    // Si estamos en el dashboard, los sockets pueden estar activos.
+    // Los desconectamos antes de navegar a otra página.
+    if (window.location.pathname.includes('/dashboard')) {
+        await disconnectWebSockets();
+        // Esperar un breve momento para asegurar la desconexión
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    // Una vez desconectados, procedemos con la navegación.
+    try {
+        if (pageName === 'dashboard') {
+            window.location.href = '/dashboard';
+        } else if (pageName === 'historial') {
+            window.location.href = '/historial';
+        } else if (pageName === 'login') {
+            // La función logout ya maneja la desconexión, pero esto es un seguro.
+            window.location.href = '/login';
+        } else {
+            console.error(`Página desconocida: ${pageName}`);
+        }
+    } catch (error) {
+        console.error("Error durante la navegación:", error);
+        // Forzar la navegación si la desconexión falla después del timeout
+        window.location.href = `/${pageName}`;
     }
 }
 
@@ -455,14 +465,23 @@ async function connectWebSocket() {
 
 // Conectar WebSocket a Flask para recibir datos de peso
 function connectFlaskWebSocket() {
+    // Verificar si ya hay una conexión activa
+    if (appState.flaskSocket && appState.flaskSocket.connected) {
+        console.log('Ya hay una conexión WebSocket activa con Flask');
+        return;
+    }
+
     // Conectar al WebSocket de Flask en el mismo servidor
     appState.flaskSocket = io('/', {
         transports: ['websocket'],
-        withCredentials: true
+        withCredentials: true,
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000
     });
 
     appState.flaskSocket.on('connect', () => {
-        // Conexión WebSocket establecida con Flask
+        console.log('Conexión WebSocket establecida con Flask');
     });
 
     appState.flaskSocket.on('connect_error', (error) => {
@@ -477,7 +496,6 @@ function connectFlaskWebSocket() {
     
     // Escuchar el estado de los componentes
     appState.flaskSocket.on('component_status', (data) => {
-
         // Actualizar estado de los componentes
         const basculaChanged = appState.basculaConectada !== (data.bascula_conectada || false);
         const impresoraChanged = appState.impresoraConectada !== (data.impresora_conectada || false);
@@ -505,8 +523,8 @@ function connectFlaskWebSocket() {
         updateStatusIndicators();
     });
 
-    appState.flaskSocket.on('disconnect', () => {
-        // Desconectado del servidor Flask
+    appState.flaskSocket.on('disconnect', (reason) => {
+        console.log('Desconectado del servidor Flask:', reason);
     });
 }
 
@@ -639,6 +657,23 @@ async function handlePesar() {
         return;
     }
 
+    // Obtener el producto seleccionado para verificar su peso base
+    const productoSeleccionado = appState.productos.find(p => p.id == selectedProductoId);
+    if (!productoSeleccionado) {
+        showMessage('Producto no encontrado en el catálogo', 'error');
+        return;
+    }
+
+    // Validar que el peso esté en el rango permitido (0g a peso base + 100g)
+    const pesoBase = productoSeleccionado.peso; // peso base del producto
+    const pesoMinimo = 0;
+    const pesoMaximo = pesoBase + 10; // rango de 100g por encima del peso base
+
+    if (appState.pesoActual < pesoMinimo || appState.pesoActual > pesoMaximo) {
+        showMessage(`El peso no está en el rango del producto. Peso actual: ${appState.pesoActual}g. Rango permitido: ${pesoMinimo}g - ${pesoMaximo}g`, 'error');
+        return;
+    }
+
     // Asegurarse de que el WebSocket esté conectado antes de enviar
     if (!appState.socket || !appState.socket.connected) {
         connectWebSocket();
@@ -718,10 +753,26 @@ async function handlePesar() {
                 const empaqueCreado = response.empaques[0];
                 showMessage(`Empaque creado exitosamente. EPC: ${empaqueCreado.epc}`, 'success', 8000);
 
+                // Obtener el nombre del producto seleccionado del menú desplegable
+                const productoSelect = document.getElementById('producto-select');
+                const selectedOption = productoSelect.options[productoSelect.selectedIndex];
+                let nombreProductoSeleccionado = 'Producto';
+                
+                if (selectedOption && selectedOption.text) {
+                    // El formato en el select es "id - nombre - peso", así que extraemos solo el nombre
+                    const partes = selectedOption.text.split(' - ');
+                    if (partes.length >= 2) {
+                        nombreProductoSeleccionado = partes[1]; // Nombre del producto
+                    } else {
+                        nombreProductoSeleccionado = partes[0]; // En caso de que solo tenga el ID
+                    }
+                }
+                
                 // Actualizar la UI con los datos del empaque creado
                 updateUltimoEmpaque({
                     id: empaqueCreado.id || 'N/A',
-                    producto: empaqueCreado.nombre || 'Producto',
+                    id_producto: empaqueCreado.id_producto || selectedProductoId,
+                    producto: nombreProductoSeleccionado,
                     peso_g: empaqueCreado.peso_g || appState.pesoActual,
                     precio_total: empaqueCreado.precio_venta_total || 0,
                     epc: empaqueCreado.epc || 'N/A',
@@ -845,10 +896,13 @@ function updateUltimoEmpaque(empaque) {
     const container = document.getElementById('ultimo-empaque-info');
     if (!container) return;
 
+    // Formatear el nombre del producto con ID
+    const nombreConId = `${empaque.id_producto || 'N/A'}-${empaque.producto || 'Producto'}`;
+    
     container.innerHTML = `
         <div class="empaque-info">
-            <p><strong>Producto:</strong> ${empaque.producto}</p>
-            <p><strong>Peso:</strong> ${empaque.peso_g} kg</p>
+            <p><strong>Producto:</strong> ${nombreConId}</p>
+            <p><strong>Peso:</strong> ${empaque.peso_g} g</p>
             <p><strong>Precio:</strong> $${empaque.precio_total}</p>
             <p><strong>EPC:</strong> ${empaque.epc}</p>
             <p><strong>Fecha:</strong> ${new Date(empaque.fecha_creacion).toLocaleString()}</p>
@@ -1081,19 +1135,71 @@ function showMessage(message, type = 'info', duration = 5000) {
 }
 
 // Logout
-function logout() {
-    if (appState.socket) {
-        appState.socket.disconnect();
-        appState.socket = null;
-    }
-    if (appState.flaskSocket) {
-        appState.flaskSocket.disconnect();
-        appState.flaskSocket = null;
-    }
+async function logout() {
     appState.estacionInfo = null;
     sessionStorage.removeItem('vorak_estacion_info'); // Limpiar también la info de la estación
-    // Redirigir a la página de login
-    window.location.href = '/login';
+
+    try {
+        // Esperar a que los WebSockets se desconecten de forma limpia
+        await disconnectWebSockets();
+        console.log("Sockets desconectados. Redirigiendo a login.");
+    } catch (error) {
+        console.warn("Error durante la desconexión de sockets en logout, redirigiendo de todas formas:", error);
+    } finally {
+        // Redirigir a la página de login, incluso si la desconexión falló (por timeout)
+        window.location.href = '/login';
+    }
+}
+
+/**
+ * Desconecta los WebSockets de forma limpia y devuelve una Promise
+ * que se resuelve cuando ambos se han desconectado.
+ */
+function disconnectWebSockets() {
+    return new Promise((resolve) => {
+        const socketsToDisconnect = [];
+        if (appState.socket && appState.socket.connected) {
+            socketsToDisconnect.push(appState.socket);
+        }
+        if (appState.flaskSocket && appState.flaskSocket.connected) {
+            socketsToDisconnect.push(appState.flaskSocket);
+        }
+
+        if (socketsToDisconnect.length === 0) {
+            // Destruir las referencias de todas formas para evitar reconexiones fantasma
+            appState.socket = null;
+            appState.flaskSocket = null;
+            console.log("No había sockets conectados, referencias limpiadas.");
+            resolve();
+            return;
+        }
+
+        let disconnectedCount = 0;
+        const timeout = setTimeout(() => {
+            // Forzar limpieza de referencias después de timeout
+            appState.socket = null;
+            appState.flaskSocket = null;
+            console.log("Timeout de desconexión, referencias limpiadas.");
+            resolve();
+        }, 2000); // 2 segundos de timeout
+
+        const onDisconnect = () => {
+            disconnectedCount++;
+            if (disconnectedCount === socketsToDisconnect.length) {
+                clearTimeout(timeout);
+                // Destruir las referencias para evitar reconexiones fantasma
+                appState.socket = null;
+                appState.flaskSocket = null;
+                console.log("Todas las referencias de socket han sido limpiadas.");
+                resolve();
+            }
+        };
+
+        socketsToDisconnect.forEach(socket => {
+            socket.once('disconnect', onDisconnect);
+            socket.disconnect();
+        });
+    });
 }
 
 // Hacer logout disponible globalmente

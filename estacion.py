@@ -1,3 +1,7 @@
+# Importar eventlet y hacer monkey patch antes de cualquier otro módulo de Flask
+import eventlet
+eventlet.monkey_patch()
+
 import os
 import serial # pyright: ignore[reportMissingModuleSource]
 from flask import Flask, jsonify, request, send_from_directory # pyright: ignore[reportMissingImports]
@@ -9,6 +13,7 @@ import threading
 import time
 import subprocess
 import sys
+
 sys.path.append(os.path.join(os.path.dirname(__file__), 'impresion'))
 from imprimir import imprimir_etiqueta, verificar_estado_impresora # type: ignore
 
@@ -26,7 +31,12 @@ static_path = os.path.join(os.path.dirname(__file__), "static")
 app = Flask(__name__, static_folder=static_path, static_url_path='/')
 
 # --- Inicialización de SocketIO ---
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Intentar usar eventlet si está disponible, de lo contrario threading
+try:
+    import eventlet
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet', logger=False, engineio_logger=False)
+except ImportError:
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', logger=False, engineio_logger=False)
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -80,52 +90,41 @@ def manage_bascula_connection(state, socketio_instance):
         try:
             # Parámetros comunes: 8 data bits, no parity, 1 stop bit (8N1)
             with serial.Serial(serial_port, serial_baudrate, timeout=1, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE) as ser:
-                app.logger.info("Báscula conectada. Empezando a leer datos...")
-                
-                buffer = ""  # Buffer para acumular datos incompletos
-                
+                app.logger.info(f"Báscula conectada en {serial_port}. Esperando datos...")
+
                 with state["lock"]:
                     state["bascula_conectada"] = True
 
                 # Emitir estado al conectar
                 previous_status = emit_component_status(socketio_instance, state, previous_status)
 
+                # Bucle de lectura optimizado con readline()
                 while True:
                     try:
-                        if ser.in_waiting > 0:
-                            raw_data = ser.read(ser.in_waiting)
-                            try:
-                                decoded_data = raw_data.decode('utf-8')
-                                buffer += decoded_data
-                                lines = buffer.split('\n')
-                                buffer = lines[-1]
-                                
-                                # Procesar todos los mensajes completos
-                                for line in lines[:-1]:
-                                    line = line.strip()
-                                    if line:  # Si hay datos válidos
-                                        
-                                        # Intentar convertir la línea a un número entero
-                                        try:
-                                            peso_en_gramos = int(line)
-                                            with state["lock"]:
-                                                state["peso"] = peso_en_gramos
-                                            
-                                            # Emitir el peso a través de WebSocket
-                                            socketio_instance.emit('peso_en_gramos', {'peso': peso_en_gramos}, namespace='/')
-                                        except ValueError:
-                                            # Si la línea no es un número válido, se ignora
-                                            pass
-                            except UnicodeDecodeError:
-                                app.logger.warning("Error de decodificación de datos recibidos")
-                                continue
-                    except Exception as read_error:
-                        if "device reports readiness to read but returned no data" in str(read_error):
-                            # Este es un error común cuando no hay datos disponibles, no es un error real
-                            continue  # Continuar intentando leer sin log
-                        else:
-                            app.logger.error(f"Error fatal durante la lectura: {read_error}. Cerrando conexión...")
-                            break  # Salir del bucle interno para reconectar
+                        # readline() es una llamada bloqueante que espera hasta recibir un '\n' o hasta que se cumpla el timeout
+                        linea_bytes = ser.readline()
+                        if not linea_bytes:
+                            # Si readline() devuelve una cadena vacía, significa que el timeout (1s) se cumplió sin recibir datos.
+                            # Esto es normal si la báscula no envía datos constantemente. Continuamos esperando.
+                            continue
+
+                        linea_str = linea_bytes.decode('utf-8').strip()
+
+                        if linea_str:
+                            peso_en_gramos = int(linea_str)
+                            with state["lock"]:
+                                state["peso"] = peso_en_gramos
+                            socketio_instance.emit('peso_en_gramos', {'peso': peso_en_gramos}, namespace='/')
+
+                    except (UnicodeDecodeError, ValueError) as data_error:
+                        app.logger.warning(f"Dato inválido recibido de la báscula, se ignora: {data_error}")
+                    except serial.SerialException as ser_err:
+                        app.logger.error(f"Error de puerto serial durante la lectura: {ser_err}. Saliendo para reconectar...")
+                        break
+        except KeyboardInterrupt:
+            # Manejar interrupción del teclado
+            app.logger.info("Interrupción del teclado detectada, saliendo...")
+            break
         except serial.SerialException as e:
             app.logger.error(f"Error de puerto serial: {e}. Reintentando en 5 segundos...")
         except Exception as e:
@@ -173,6 +172,10 @@ def manage_impresora_connection(state, socketio_instance):
                 else:
                     app.logger.warning("Impresora desconectada")
 
+        except KeyboardInterrupt:
+            # Manejar interrupción del teclado
+            app.logger.info("Interrupción del teclado detectada, saliendo...")
+            break
         except Exception as e:
             app.logger.error(f"Error verificando estado de impresora: {e}")
             with state["lock"]:
@@ -181,10 +184,6 @@ def manage_impresora_connection(state, socketio_instance):
         # Verificar cada 10 segundos
         time.sleep(10)
 
-
-# Iniciar hilos de hardware
-bascula_thread = threading.Thread(target=manage_bascula_connection, args=(hardware_state, socketio), daemon=True)
-bascula_thread.start()
 
 def check_rfid_device_connected():
     """
@@ -235,6 +234,10 @@ def manage_rfid_connection(state, socketio_instance):
                 else:
                     app.logger.warning("RFID/TAG desconectado")
 
+        except KeyboardInterrupt:
+            # Manejar interrupción del teclado
+            app.logger.info("Interrupción del teclado detectada, saliendo...")
+            break
         except Exception as e:
             app.logger.error(f"Error verificando estado de RFID: {e}")
             with state["lock"]:
@@ -266,10 +269,6 @@ def handle_disconnect():
 @socketio.on('peso_en_gramos')
 def handle_peso_en_gramos(data):
     app.logger.info(f"Evento 'peso_en_gramos' recibido por el cliente: {data}")
-
-
-# Iniciar hilos de hardware
-
 
 # --- Rutas para servir la SPA (Single Page Application) ---
 
@@ -406,5 +405,11 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT"))
     host = os.getenv("HOST")  # Valor por defecto para host
     debug_mode = os.getenv("FLASK_DEBUG", "False").lower() == "true"
-    # Usar el servidor de eventos de SocketIO en lugar del de Flask
-    socketio.run(app, host=host, port=port, debug=debug_mode)
+    try:
+        # Usar eventlet como servidor WSGI para mejor manejo de WebSocket
+        socketio.run(app, host=host, port=port, debug=debug_mode, use_reloader=False)
+    except KeyboardInterrupt:
+        app.logger.info("Aplicación interrumpida por el usuario")
+        # Detener los hilos de forma ordenada
+        import sys
+        sys.exit(0)
