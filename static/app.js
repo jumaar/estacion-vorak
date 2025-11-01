@@ -34,9 +34,15 @@ function initializeApp() {
     
     // Si estamos en la página de historial, cargar los productos de la estación
     if (window.location.pathname.includes('/historial')) {
-        console.log('initializeApp: Detectada página de historial, programando carga de productos');
         // Cargar productos de la estación sin depender de conexiones WebSocket
         loadProductosEstacion();
+        // Enfocar el input de búsqueda de EPC después de cargar
+        setTimeout(() => {
+            const epcInput = document.getElementById('epc-input');
+            if (epcInput) {
+                epcInput.focus();
+            }
+        }, 500); // Dar tiempo para que se cargue la página
     } else if (window.location.pathname.includes('/dashboard')) {
         // Solo conectar WebSockets en el dashboard
         console.log('initializeApp: Detectado dashboard, conectando WebSockets.');
@@ -80,10 +86,27 @@ function setupEventListeners() {
     const historialBtn = document.getElementById('historial-btn');
     if (historialBtn) {
         historialBtn.addEventListener('click', () => {
-            console.log('historialBtn: Botón de historial clickeado, navegando a página de historial');
             navigateToPage('historial');
             // Cargar productos de la estación inmediatamente después de navegar
             setTimeout(loadProductosEstacion, 100);
+        });
+    }
+
+    // Botón de búsqueda por EPC (disponible en la página de historial)
+    const buscarEpcBtn = document.getElementById('buscar-epc-btn');
+    if (buscarEpcBtn) {
+        buscarEpcBtn.addEventListener('click', buscarEmpaquePorEpc);
+    }
+
+    // También permitir buscar al presionar Enter en el input
+    const epcInput = document.getElementById('epc-input');
+    if (epcInput) {
+        epcInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                buscarEmpaquePorEpc();
+                // Limpiar el input después de buscar
+                epcInput.value = '';
+            }
         });
     }
 
@@ -657,6 +680,14 @@ async function handlePesar() {
         return;
     }
 
+    // Nueva validación: Asegurar que el campo de EPC no esté vacío
+    const productoInput = document.getElementById('producto-input');
+    const epcIngresado = productoInput ? productoInput.value.trim() : '';
+    if (!epcIngresado) {
+        showMessage('Por favor, ingrese o escanee un código EPC antes de pesar.', 'error');
+        return;
+    }
+
     // Obtener el producto seleccionado para verificar su peso base
     const productoSeleccionado = appState.productos.find(p => p.id == selectedProductoId);
     if (!productoSeleccionado) {
@@ -664,13 +695,14 @@ async function handlePesar() {
         return;
     }
 
-    // Validar que el peso esté en el rango permitido (0g a peso base + 100g)
-    const pesoBase = productoSeleccionado.peso; // peso base del producto
-    const pesoMinimo = 0;
-    const pesoMaximo = pesoBase + 10; // rango de 100g por encima del peso base
+    // Validar que el peso esté en el rango de tolerancia (+/- 100g del peso base del producto)
+    const pesoBase = productoSeleccionado.peso;
+    const toleranciaGramos = 100;
+    const pesoMinimo = pesoBase - toleranciaGramos;
+    const pesoMaximo = pesoBase + toleranciaGramos;
 
     if (appState.pesoActual < pesoMinimo || appState.pesoActual > pesoMaximo) {
-        showMessage(`El peso no está en el rango del producto. Peso actual: ${appState.pesoActual}g. Rango permitido: ${pesoMinimo}g - ${pesoMaximo}g`, 'error');
+        showMessage(`El peso está fuera de tolerancia. Peso actual: ${appState.pesoActual}g. Rango permitido: ${pesoMinimo}g - ${pesoMaximo}g`, 'error', 8000);
         return;
     }
 
@@ -681,10 +713,6 @@ async function handlePesar() {
         // Esperar un poco para que se conecte
         await new Promise(resolve => setTimeout(resolve, 100));
     }
-
-    // Obtener el EPC del input si está disponible
-    const productoInput = document.getElementById('producto-input');
-    const epcIngresado = productoInput ? productoInput.value.trim() : '';
 
     // Validar que el EPC tenga un formato válido (al menos 10 caracteres para códigos EPC)
     if (epcIngresado && epcIngresado.length < 10) {
@@ -912,33 +940,27 @@ function updateUltimoEmpaque(empaque) {
 
 // Cargar historial de productos de la estación
 async function loadProductosEstacion() {
-    console.log('loadProductosEstacion: Iniciando carga de productos de la estación');
     try {
         // Obtener el ID de la estación del estado de la aplicación
         const estacionInfo = sessionStorage.getItem('vorak_estacion_info');
         if (!estacionInfo) {
-            console.log('loadProductosEstacion: No se encontró información de la estación en sessionStorage');
             showMessage('No se encontró información de la estación', 'error');
             return;
         }
-        
+
         const estacion = JSON.parse(estacionInfo);
-        console.log('loadProductosEstacion: Información de estación obtenida', estacion);
         const estacionId = estacion.id_estacion;
-        
+
         // Obtener la URL base del backend NestJS
         const configResponse = await fetch('/api/backend-config');
         if (!configResponse.ok) {
-            console.log('loadProductosEstacion: No se pudo obtener la configuración del servidor');
             showMessage('No se pudo obtener la configuración del servidor', 'error');
             return;
         }
         const configData = await configResponse.json();
         const nestjsApiBaseUrl = configData.nestjs_api_base_url;
-        console.log('loadProductosEstacion: URL del backend NestJS obtenida', nestjsApiBaseUrl);
-        
+
         // Hacer la petición HTTP para obtener los productos de la estación
-        console.log('loadProductosEstacion: Haciendo petición a', `${nestjsApiBaseUrl}/api/frigorifico/estacion/${estacionId}`);
         const response = await fetch(`${nestjsApiBaseUrl}/api/frigorifico/estacion/${estacionId}`, {
             method: 'GET',
             credentials: 'include', // Para enviar cookies HttpOnly
@@ -946,21 +968,17 @@ async function loadProductosEstacion() {
                 'Content-Type': 'application/json',
             },
         });
-        console.log('loadProductosEstacion: Petición completada con status', response.status);
-        
+
         if (response.status === 401) {
-            console.log('loadProductosEstacion: No autorizado (401), redirigiendo al logout');
             showMessage('No autorizado. Por favor inicie sesión nuevamente.', 'error');
             logout();
             return;
         }
-        
+
         if (!response.ok) {
-            console.log('loadProductosEstacion: Petición no exitosa', response.status);
             throw new Error(`Error en la petición: ${response.status}`);
         }
-        
-        console.log('loadProductosEstacion: Datos recibidos exitosamente');
+
         const data = await response.json();
         
         // Procesar la respuesta para calcular totales
@@ -987,6 +1005,9 @@ async function loadProductosEstacion() {
             pesoTotalElement.textContent = (totalPeso / 1000).toFixed(2);
         }
         
+        // Guardar los productos en el estado de la aplicación para búsquedas locales
+        appState.productosEstacion = data.productos;
+        
         // Renderizar la tabla de productos con desplegables
         renderProductosTable(data.productos);
         
@@ -1002,39 +1023,47 @@ function renderProductosTable(productos) {
     if (!tbody) return;
 
     if (productos.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7">No hay productos registrados</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6">No hay productos registrados</td></tr>';
         return;
     }
 
     let tableHTML = '';
 
     productos.forEach(producto => {
-        // Fila principal del producto
+        // Fila principal del producto que actúa como título
         tableHTML += `
-            <tr class="producto-row">
-                <td>${producto.id_producto}</td>
-                <td>${producto.nombre_producto}</td>
-                <td>${producto.cantidad_total}</td>
-                <td>$${producto.empaques.reduce((sum, empaque) => sum + parseFloat(empaque.precio_venta_total), 0).toFixed(2)}</td>
-                <td colspan="3">
-                    <button class="toggle-empaques-btn" data-producto-id="${producto.id_producto}">
-                        Ver ${producto.empaques.length} empaques ▼
-                    </button>
+            <tr class="producto-row" data-producto-id="${producto.id_producto}">
+                <td colspan="6">
+                    <div class="producto-header">
+                        <h3>${producto.id_producto} - ${producto.nombre_producto} - ${producto.peso_nominal_g || 'N/A'}g</h3>
+                        <button class="toggle-empaques-btn" data-producto-id="${producto.id_producto}">
+                            Ver ${producto.cantidad_total} empaques ▼
+                        </button>
+                    </div>
                 </td>
+            </tr>
+            <tr class="product-header-row" style="display: none;" data-producto-id="${producto.id_producto}">
+                <th>ID</th>
+                <th>Producto</th>
+                <th>Peso</th>
+                <th>EPC</th>
+                <th>Fecha</th>
+                <th>Acciones</th>
             </tr>
         `;
 
         // Filas de empaques (inicialmente ocultas)
         producto.empaques.forEach((empaque, index) => {
             tableHTML += `
-                <tr class="empaque-row" data-producto-id="${producto.id_producto}" style="display: none;">
+                <tr class="empaque-row" data-empaque-id="${empaque.id}" style="display: none;" data-producto-id="${producto.id_producto}">
                     <td>${producto.id_producto}</td>
                     <td>${producto.nombre_producto}</td>
                     <td>${empaque.peso_g}g</td>
-                    <td>$${empaque.precio_venta_total}</td>
                     <td>${empaque.epc}</td>
                     <td>${new Date(empaque.fecha_empaque).toLocaleString()}</td>
-                    <td><span class="status-chip status-active">Empaque</span></td>
+                    <td>
+                        <button class="btn btn-danger btn-small btn-eliminar-empaque" data-empaque-id="${empaque.id}">Eliminar</button>
+                    </td>
                 </tr>
             `;
         });
@@ -1047,7 +1076,9 @@ function renderProductosTable(productos) {
         button.addEventListener('click', function() {
             const productoId = this.getAttribute('data-producto-id');
             const empaqueRows = document.querySelectorAll(`.empaque-row[data-producto-id="${productoId}"]`);
+            const headerRow = document.querySelector(`.product-header-row[data-producto-id="${productoId}"]`);
             
+            // Alternar visibilidad de las filas de empaques
             empaqueRows.forEach(row => {
                 if (row.style.display === 'none') {
                     row.style.display = '';
@@ -1056,9 +1087,94 @@ function renderProductosTable(productos) {
                 }
             });
             
+            // Alternar visibilidad del encabezado
+            if (headerRow) {
+                if (headerRow.style.display === 'none') {
+                    headerRow.style.display = '';
+                } else {
+                    headerRow.style.display = 'none';
+                }
+            }
+            
             // Cambiar el texto del botón según el estado
             const isVisible = empaqueRows[0] && empaqueRows[0].style.display !== 'none';
             this.innerHTML = isVisible ? `Ocultar empaques ▲` : `Ver ${empaqueRows.length} empaques ▼`;
+        });
+    });
+
+    // Añadir event listeners para los botones de eliminar
+    document.querySelectorAll('.btn-eliminar-empaque').forEach(button => {
+        button.addEventListener('click', async function(event) {
+            event.stopPropagation(); // Evitar que se dispare el toggle de la fila
+            const empaqueId = this.getAttribute('data-empaque-id');
+            const empaqueRow = this.closest('.empaque-row');
+            const epc = empaqueRow.querySelector('td:nth-child(4)').textContent; // Obtener el EPC de la celda correspondiente
+            
+            // Obtener el ID de la estación del sessionStorage
+            const estacionInfo = sessionStorage.getItem('vorak_estacion_info');
+            if (!estacionInfo) {
+                showMessage('No se encontró información de la estación', 'error');
+                return;
+            }
+            
+            const estacion = JSON.parse(estacionInfo);
+            const estacionId = estacion.id_estacion;
+            
+            // Obtener la URL base del backend
+            let nestjsApiBaseUrl = appState.nestjsApiBaseUrl;
+            if (!nestjsApiBaseUrl) {
+                try {
+                    const configResponse = await fetch('/api/backend-config');
+                    if (!configResponse.ok) {
+                        showMessage('No se pudo obtener la configuración del servidor', 'error');
+                        return;
+                    }
+                    const configData = await configResponse.json();
+                    nestjsApiBaseUrl = configData.nestjs_api_base_url;
+                    appState.nestjsApiBaseUrl = nestjsApiBaseUrl; // Guardar para uso futuro
+                } catch (error) {
+                    console.error('Error obteniendo URL del backend:', error);
+                    showMessage('Error obteniendo la URL del backend', 'error');
+                    return;
+                }
+            }
+            
+            const confirmacion = confirm(`¿Estás seguro de que quieres eliminar el empaque con EPC ${epc}?`);
+            
+            if (confirmacion) {
+                // Llamar a la nueva API para eliminar el empaque por EPC
+                fetch(`${nestjsApiBaseUrl}/api/frigorifico/estacion/${estacionId}/empaque/${epc}`, {
+                    method: 'DELETE',
+                    credentials: 'include' // Importante: incluye las cookies
+                })
+                .then(response => {
+                    // Verificar si la respuesta es exitosa antes de intentar parsear JSON
+                    if (!response.ok) {
+                        // Si no es exitosa, crear un objeto de error con el status
+                        return response.json().then(errorData => {
+                            throw new Error(errorData.message || `Error ${response.status}: ${response.statusText}`);
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.deleted) {
+                        // Eliminar la fila del empaque de la tabla
+                        empaqueRow.remove();
+                        showMessage(`Empaque ${data.epc} eliminado correctamente`, 'success');
+                        
+                        // Actualizar los totales
+                        updateDashboardStats();
+                    } else {
+                        // Mostrar mensaje de error si no se eliminó
+                        showMessage(data.message || `Error al eliminar el empaque con EPC: ${epc}`, 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error al eliminar el empaque:', error);
+                    showMessage(error.message || 'Error al eliminar el empaque. Inténtalo de nuevo.', 'error');
+                });
+            }
         });
     });
 }
@@ -1204,3 +1320,217 @@ function disconnectWebSockets() {
 
 // Hacer logout disponible globalmente
 window.logout = logout;
+
+// Función para buscar un empaque específico por EPC
+async function buscarEmpaquePorEpc() {
+    const epcInput = document.getElementById('epc-input');
+    const epc = epcInput.value.trim();
+
+    if (!epc) {
+        showMessage('Por favor ingrese un EPC para buscar', 'error');
+        return;
+    }
+
+    if (epc.length < 10) {
+        showMessage('El EPC debe tener al menos 10 caracteres', 'error');
+        return;
+    }
+
+    try {
+        // Mostrar mensaje de carga
+        const busquedaTable = document.getElementById('busqueda-empaque-list');
+        busquedaTable.innerHTML = '<tr><td colspan="6">Buscando empaque...</td></tr>';
+
+        // Buscar en los datos locales de productos de la estación
+        let empaqueEncontrado = null;
+        let productoPadre = null;
+
+        if (appState.productosEstacion && Array.isArray(appState.productosEstacion)) {
+            for (const producto of appState.productosEstacion) {
+                const empaque = producto.empaques.find(e => e.epc === epc);
+                if (empaque) {
+                    empaqueEncontrado = empaque;
+                    productoPadre = producto;
+                    break;
+                }
+            }
+        }
+
+        if (empaqueEncontrado && productoPadre) {
+            // Mostrar el producto con solo el empaque encontrado (igual que la tabla principal pero con un solo empaque)
+            renderProductoConEmpaqueEspecifico(productoPadre, empaqueEncontrado);
+        } else {
+            // Si no se encuentra el empaque
+            busquedaTable.innerHTML = '<tr><td colspan="6">No se encontró ningún empaque con este EPC</td></tr>';
+            showMessage('No se encontró ningún empaque con este EPC', 'error');
+            // Limpiar el input cuando no se encuentra el EPC
+            epcInput.value = '';
+            return;
+        }
+
+    } catch (error) {
+        console.error('Error buscando empaque por EPC:', error);
+        const busquedaTable = document.getElementById('busqueda-empaque-list');
+        busquedaTable.innerHTML = '<tr><td colspan="6">Error buscando empaque. Inténtelo de nuevo.</td></tr>';
+        showMessage('Error buscando empaque. Inténtelo de nuevo.', 'error');
+    }
+}
+
+// Función para renderizar el producto con solo el empaque específico encontrado
+function renderProductoConEmpaqueEspecifico(producto, empaqueEspecifico) {
+    const busquedaTable = document.getElementById('busqueda-empaque-list');
+
+    if (!producto || !empaqueEspecifico) {
+        busquedaTable.innerHTML = '<tr><td colspan="6">No se encontró información del empaque</td></tr>';
+        return;
+    }
+
+    let tableHTML = '';
+
+    // Fila principal del producto que actúa como título (igual que en la tabla principal)
+    tableHTML += `
+        <tr class="producto-row" data-producto-id="${producto.id_producto}">
+            <td colspan="6">
+                <div class="producto-header">
+                    <h3>${producto.id_producto} - ${producto.nombre_producto} - ${producto.peso_nominal_g || 'N/A'}g</h3>
+                    <button class="toggle-empaques-btn" data-producto-id="${producto.id_producto}">
+                        Ver empaque encontrado ▼
+                    </button>
+                </div>
+            </td>
+        </tr>
+        <tr class="product-header-row" style="display: none;" data-producto-id="${producto.id_producto}">
+            <th>ID</th>
+            <th>Producto</th>
+            <th>Peso</th>
+            <th>EPC</th>
+            <th>Fecha</th>
+            <th>Acciones</th>
+        </tr>
+    `;
+
+    // Solo mostrar el empaque específico encontrado
+    tableHTML += `
+        <tr class="empaque-row destacado" data-empaque-id="${empaqueEspecifico.id}" style="display: none;" data-producto-id="${producto.id_producto}">
+            <td>${producto.id_producto}</td>
+            <td>${producto.nombre_producto}</td>
+            <td>${empaqueEspecifico.peso_g}g</td>
+            <td>${empaqueEspecifico.epc} ⭐</td>
+            <td>${new Date(empaqueEspecifico.fecha_empaque).toLocaleString()}</td>
+            <td>
+                <button class="btn btn-danger btn-small btn-eliminar-empaque" data-empaque-id="${empaqueEspecifico.id}">Eliminar</button>
+            </td>
+        </tr>
+    `;
+
+    busquedaTable.innerHTML = tableHTML;
+
+    // Añadir event listeners para los botones de toggle
+    const toggleButton = document.querySelector(`.toggle-empaques-btn[data-producto-id="${producto.id_producto}"]`);
+    if (toggleButton) {
+        toggleButton.addEventListener('click', function() {
+            const productoId = this.getAttribute('data-producto-id');
+            const empaqueRows = document.querySelectorAll(`.empaque-row[data-producto-id="${productoId}"]`);
+            const headerRow = document.querySelector(`.product-header-row[data-producto-id="${productoId}"]`);
+
+            // Alternar visibilidad de las filas de empaques
+            empaqueRows.forEach(row => {
+                if (row.style.display === 'none') {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+
+            // Alternar visibilidad del encabezado
+            if (headerRow) {
+                if (headerRow.style.display === 'none') {
+                    headerRow.style.display = '';
+                } else {
+                    headerRow.style.display = 'none';
+                }
+            }
+
+            // Cambiar el texto del botón según el estado
+            const isVisible = empaqueRows[0] && empaqueRows[0].style.display !== 'none';
+            this.innerHTML = isVisible ? `Ocultar empaque ▲` : `Ver empaque encontrado ▼`;
+        });
+    }
+
+    // Añadir event listeners para los botones de eliminar
+    const eliminarButton = document.querySelector('.btn-eliminar-empaque');
+    if (eliminarButton) {
+        eliminarButton.addEventListener('click', async function(event) {
+            event.stopPropagation(); // Evitar que se dispare el toggle de la fila
+            const empaqueId = this.getAttribute('data-empaque-id');
+            const empaqueRow = this.closest('.empaque-row');
+            const epc = empaqueRow.querySelector('td:nth-child(4)').textContent.replace(' ⭐', ''); // Obtener el EPC de la celda correspondiente, removiendo el marcador
+
+            // Obtener el ID de la estación del sessionStorage
+            const estacionInfo = sessionStorage.getItem('vorak_estacion_info');
+            if (!estacionInfo) {
+                showMessage('No se encontró información de la estación', 'error');
+                return;
+            }
+
+            const estacion = JSON.parse(estacionInfo);
+            const estacionId = estacion.id_estacion;
+
+            // Obtener la URL base del backend
+            let nestjsApiBaseUrl = appState.nestjsApiBaseUrl;
+            if (!nestjsApiBaseUrl) {
+                try {
+                    const configResponse = await fetch('/api/backend-config');
+                    if (!configResponse.ok) {
+                        showMessage('No se pudo obtener la configuración del servidor', 'error');
+                        return;
+                    }
+                    const configData = await configResponse.json();
+                    nestjsApiBaseUrl = configData.nestjs_api_base_url;
+                    appState.nestjsApiBaseUrl = nestjsApiBaseUrl; // Guardar para uso futuro
+                } catch (error) {
+                    console.error('Error obteniendo URL del backend:', error);
+                    showMessage('Error obteniendo la URL del backend', 'error');
+                    return;
+                }
+            }
+
+            const confirmacion = confirm(`¿Estás seguro de que quieres eliminar el empaque con EPC ${epc}?`);
+
+            if (confirmacion) {
+                // Llamar a la nueva API para eliminar el empaque por EPC
+                fetch(`${nestjsApiBaseUrl}/api/frigorifico/estacion/${estacionId}/empaque/${epc}`, {
+                    method: 'DELETE',
+                    credentials: 'include' // Importante: incluye las cookies
+                })
+                .then(response => {
+                    // Verificar si la respuesta es exitosa antes de intentar parsear JSON
+                    if (!response.ok) {
+                        // Si no es exitosa, crear un objeto de error con el status
+                        return response.json().then(errorData => {
+                            throw new Error(errorData.message || `Error ${response.status}: ${response.statusText}`);
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.deleted) {
+                        // Eliminar la fila del empaque de la tabla
+                        empaqueRow.remove();
+                        showMessage(`Empaque ${data.epc} eliminado correctamente`, 'success');
+
+                        // Actualizar los totales
+                        updateDashboardStats();
+                    } else {
+                        // Mostrar mensaje de error si no se eliminó
+                        showMessage(data.message || `Error al eliminar el empaque con EPC: ${epc}`, 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error al eliminar el empaque:', error);
+                    showMessage(error.message || 'Error al eliminar el empaque. Inténtalo de nuevo.', 'error');
+                });
+            }
+        });
+    }
+}

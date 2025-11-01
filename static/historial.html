@@ -11,11 +11,29 @@
         <!-- Página de Historial -->
         <div id="historial-page" class="page active">
             <div class="products-container">
-                <button id="volver-dashboard-btn" class="btn btn-secondary">Volver al Dashboard</button>
                 <div class="products-header">
                     <h1>Historial de Empaques</h1>
                     <p>Lista de productos procesados</p>
+                    <button id="volver-dashboard-btn" class="btn btn-success">Volver al Dashboard</button>
                 </div>
+                    <!-- Div para búsqueda de empaques por EPC -->
+            <div class="busqueda-empaque-container">
+                <div class="busqueda-empaque-header">
+                    <div class="busqueda-input-container">
+                        <input type="text" id="epc-input" class="epc-input" maxlength="24" placeholder="Ingrese EPC (máximo 24 caracteres)">
+                        <button id="buscar-epc-btn" class="btn btn-primary">Buscar</button>
+                    </div>
+                <div class="busqueda-empaque-table-container">
+                    <table class="products-table">
+                        <tbody id="busqueda-empaque-list">
+                            <tr>
+                                <td colspan="6">Ingrese un EPC para buscar un empaque específico</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
                 <div class="dashboard-summary">
                     
 
@@ -36,26 +54,16 @@
 
                 <div class="products-table-container">
                     <table class="products-table">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Producto</th>
-                                <th>Peso</th>
-                                <th>Precio</th>
-                                <th>EPC</th>
-                                <th>Fecha</th>
-                                <th>Estado</th>
-                            </tr>
-                        </thead>
                         <tbody id="historial-list">
                             <tr>
-                                <td colspan="7">Cargando historial...</td>
+                                <td colspan="6">Cargando historial...</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
             </div>
-        </div>
+            
+        
     </div>
 
     <!-- Cargar la librería de cliente de Socket.IO para un manejo limpio de la desconexión -->

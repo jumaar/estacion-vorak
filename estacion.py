@@ -167,9 +167,7 @@ def manage_impresora_connection(state, socketio_instance):
                 socketio_instance.emit('component_status', current_status, namespace='/')
                 previous_status = current_status
 
-                if estado_actual:
-                    app.logger.info("Impresora conectada")
-                else:
+                if not estado_actual:
                     app.logger.warning("Impresora desconectada")
 
         except KeyboardInterrupt:
@@ -209,12 +207,14 @@ def manage_rfid_connection(state, socketio_instance):
     del lector RFID/TAG.
     """
     previous_status = None
+    is_connected = False
 
     while True:
         try:
             # Verificar si el dispositivo RFID está conectado usando su ID de USB
             estado_actual = check_rfid_device_connected()
 
+            # Solo actualizamos el estado y emitimos si ha habido un cambio
             with state["lock"]:
                 state["rfid_conectado"] = estado_actual
 
@@ -228,10 +228,9 @@ def manage_rfid_connection(state, socketio_instance):
             if previous_status != current_status:
                 socketio_instance.emit('component_status', current_status, namespace='/')
                 previous_status = current_status
+                is_connected = estado_actual
 
-                if estado_actual:
-                    app.logger.info("RFID/TAG conectado")
-                else:
+                if not estado_actual:
                     app.logger.warning("RFID/TAG desconectado")
 
         except KeyboardInterrupt:
@@ -243,8 +242,11 @@ def manage_rfid_connection(state, socketio_instance):
             with state["lock"]:
                 state["rfid_conectado"] = False
 
-        # Verificar cada 15 segundos (menos frecuente que impresora)
-        time.sleep(15)
+        # Sondeo adaptativo:
+        # - Si está conectado, verificar con menos frecuencia (cada 15s).
+        # - Si está desconectado, verificar más a menudo para una reconexión rápida (cada 2s).
+        sleep_interval = 15 if is_connected else 2
+        time.sleep(sleep_interval)
 
 
 # Iniciar hilos de hardware
