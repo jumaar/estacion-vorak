@@ -1,5 +1,5 @@
 # Importar eventlet y hacer monkey patch antes de cualquier otro módulo de Flask
-import eventlet
+import eventlet # type: ignore
 eventlet.monkey_patch()
 
 import os
@@ -34,7 +34,7 @@ app = Flask(__name__, static_folder=static_path, static_url_path='/')
 # --- Inicialización de SocketIO ---
 # Intentar usar eventlet si está disponible, de lo contrario threading
 try:
-    import eventlet
+    import eventlet # type: ignore
     socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet', logger=False, engineio_logger=False)
 except ImportError:
     socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', logger=False, engineio_logger=False)
@@ -53,8 +53,8 @@ hardware_state = {
 print_queue = queue.Queue() # Cola para los trabajos de impresión
 
 # --- Configuración de dispositivos ---
-IMPRESORA_PUERTO = "/dev/rfcomm0"
-IMPRESORA_BAUDRATE = 9600
+IMPRESORA_PUERTO = "/dev/usb/lp2"  # Cambiado a puerto de impresora USB según logs del kernel
+IMPRESORA_BAUDRATE = 9600 # Baudrate ya no es relevante para USB, pero se mantiene por compatibilidad de la función
 
 # Configuración RFID (placeholder - ajustar según hardware real)
 RFID_PUERTO = "/dev/ttyUSB1"  # Puerto para RFID reader
@@ -268,38 +268,29 @@ def manage_print_queue(state, socketio_instance):
     Maneja la conexión con la impresora de forma centralizada.
     """
     while True:
-        ser = None  # Inicializamos ser a None en cada iteración
+        printer_file = None  # Usaremos un manejador de archivo
         print_job = print_queue.get() # Espera bloqueante hasta que haya un trabajo
 
         try:
             # Verificar si la impresora está conectada antes de intentar imprimir
             with state["lock"]:
                 if not state["impresora_conectada"]:
-                    app.logger.error("Trabajo de impresión descartado: Impresora no conectada.")
+                    app.logger.warning("Trabajo de impresión descartado: Impresora no conectada.")
                     socketio_instance.emit('impresion_error', {'error': 'Impresora no conectada'})
                     continue # Salta al finally y luego a la siguiente iteración
 
-            # Abrir el puerto serial para este trabajo de impresión específico
-            app.logger.info("Abriendo puerto serial para impresión...")
-            ser = serial.Serial(
-                port=IMPRESORA_PUERTO,
-                baudrate=IMPRESORA_BAUDRATE,
-                bytesize=8, parity='N', stopbits=1,
-                timeout=2, # Timeout de escritura y lectura
-                write_timeout=5, # Aumentamos el timeout de escritura a 5s para más tolerancia
-                dsrdtr=False, rtscts=False, xonxoff=True # Habilitar control de flujo por software
-            )
-
-            # Limpiar buffers de entrada y salida para asegurar un estado limpio
-            # Esto es crucial para recuperarse de posibles estados inconsistentes anteriores.
-            ser.reset_input_buffer()
-            ser.reset_output_buffer()
+            # Para impresoras USB (/dev/usb/lpX), se abren como un archivo binario para escritura.
+            # No se usan parámetros seriales como baudrate.
+            app.logger.info(f"Abriendo puerto de impresora '{IMPRESORA_PUERTO}' para escritura...")
+            # Usamos 'wb' para escritura binaria y buffering=0 para deshabilitar el buffer de Python,
+            # enviando los datos directamente al driver del dispositivo.
+            printer_file = open(IMPRESORA_PUERTO, 'wb', buffering=0)
 
             app.logger.info("Enviando comandos de impresión...")
 
             # Imprimir usando la conexión abierta
             imprimir_etiqueta(
-                ser,
+                printer_file,
                 print_job['fecha_hora'],
                 print_job['fecha_vencimiento'],
                 print_job['peso'],
@@ -307,28 +298,26 @@ def manage_print_queue(state, socketio_instance):
             )
             
             # Esperar a que todos los datos se envíen antes de continuar
-            ser.flush()
+            printer_file.flush()
 
             app.logger.info(f"Trabajo de impresión completado para el peso: {print_job['peso']}g")
             socketio_instance.emit('impresion_completada', {'mensaje': 'Etiqueta impresa exitosamente'})
 
-        except serial.SerialException as e:
-            app.logger.error(f"Error de puerto serial en el hilo de impresión: {e}")
-            socketio_instance.emit('impresion_error', {'error': 'Error de comunicación con la impresora'})
-            # Pausa larga para permitir que el dispositivo se recupere del error
-            time.sleep(3)
+        except FileNotFoundError:
+            app.logger.error(f"Error de impresión: El dispositivo '{IMPRESORA_PUERTO}' no fue encontrado.")
+            socketio_instance.emit('impresion_error', {'error': 'Dispositivo de impresión no encontrado.'})
         except Exception as e:
             app.logger.error(f"Error inesperado en el hilo de impresión: {e}")
             socketio_instance.emit('impresion_error', {'error': 'Error interno en el proceso de impresión'})
         finally:
             # Asegurarse de que el puerto se cierre siempre, incluso si falla
-            if ser and ser.is_open:
-                app.logger.info("Cerrando puerto serial de impresión.")
-                ser.close()
+            if printer_file:
+                app.logger.info("Cerrando puerto de impresora.")
+                printer_file.close()
             # Marcar la tarea como completada en la cola
             print_queue.task_done()
             # Pausa de 500ms para darle un respiro al hardware de la impresora
-            time.sleep(2)
+            time.sleep(0.2) # Reducimos la pausa para USB, que es más rápido y estable
 
 
 @socketio.on('connect')

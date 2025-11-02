@@ -3,31 +3,17 @@ import time
 from PIL import Image, ImageDraw, ImageFont # type: ignore
 from datetime import datetime
 
-def verificar_estado_impresora(puerto_com="/dev/rfcomm0", baudrate=9600, timeout=2):
+def verificar_estado_impresora(puerto_impresora, baudrate=None, timeout=None):
+    """
+    Verifica si la impresora está conectada. Para impresoras USB (/dev/usb/lp*),
+    la forma más fiable es simplemente comprobar si el archivo del dispositivo existe.
+    """
     try:
-        # Verificar si el dispositivo existe primero
         import os
-        if not os.path.exists(puerto_com):
-            return False
-
-        # Intentar abrir el puerto
-        ser = serial.Serial(
-            port=puerto_com,
-            baudrate=baudrate,
-            bytesize=8,
-            parity='N',
-            stopbits=1,
-            timeout=timeout,
-            dsrdtr=True
-        )
-
-        # Si llega aquí, el puerto se abrió correctamente
-        ser.close()
-        return True
-
-    except serial.SerialException as e:
-        return False
+        # Para dispositivos USB, la existencia del archivo es el indicador de conexión.
+        return os.path.exists(puerto_impresora)
     except Exception as e:
+        # En caso de cualquier otro error, asumir que no está conectada.
         return False
 
 # --- CONFIGURACIÓN PARA BLUETOOTH SERIAL ---
@@ -41,12 +27,12 @@ ALTO_DOTS = 240  # 30mm
 ANCHO_BYTES = ANCHO_DOTS // 8 # ¡Siempre 8!
 # --------------------------------
 
-def imprimir_etiqueta(ser, fecha_hora, fecha_vencimiento, peso_g, precio_total):
+def imprimir_etiqueta(printer_file, fecha_hora, fecha_vencimiento, peso_g, precio_total):
     """
-    Función para generar los comandos de impresión y enviarlos a través de una conexión serial abierta.
+    Función para generar los comandos de impresión y enviarlos a un archivo de dispositivo abierto.
 
     Args:
-        ser (serial.Serial): Objeto de conexión serial ya abierto y configurado.
+        printer_file: Objeto de archivo abierto en modo binario para la impresora.
         fecha_hora (str): Fecha y hora actual
         fecha_vencimiento (str): Fecha de vencimiento
         peso_g (int): Peso en gramos
@@ -133,15 +119,15 @@ def imprimir_etiqueta(ser, fecha_hora, fecha_vencimiento, peso_g, precio_total):
     datos_bitmap = img.tobytes()
 
     # --- Enviar los comandos a la impresora a través de la conexión proporcionada ---
-    ser.write(b"CLS\n")
-    ser.write(b"SIZE 40 mm, 30 mm\n")
-    ser.write(b"GAP 0, 0\n")
-    ser.write(b"DENSITY 15\n")
+    printer_file.write(b"CLS\n")
+    printer_file.write(b"SIZE 40 mm, 30 mm\n")
+    printer_file.write(b"GAP 0, 0\n")
+    printer_file.write(b"DENSITY 15\n")
 
     X_OFFSET = -30
     comando_header = f"BITMAP {X_OFFSET}, 0, {ANCHO_BYTES}, {ALTO_DOTS}, 0, ".encode('ascii')
 
-    ser.write(comando_header)
-    ser.write(datos_bitmap)
-    ser.write(b"\n")
-    ser.write(b"PRINT 1\n")
+    printer_file.write(comando_header)
+    printer_file.write(datos_bitmap)
+    printer_file.write(b"\n")
+    printer_file.write(b"PRINT 1\n")
