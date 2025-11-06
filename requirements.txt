@@ -4,4 +4,4 @@ python-dotenv==1.0              # Carga de variables de entorno desde archivo .e
 flask-socketio==5.3.6           # WebSocket para comunicación en tiempo real
 python-socketio==5.8.0          # Dependencia de flask-socketio
 pyserial==3.5                   # Comunicación serial con dispositivos hardware
-eventlet==0.36.1                # Servidor WSGI asíncrono para manejar WebSocket concurrentes (solución al problema principal)
+Pillow==12.0.0                  # Biblioteca de procesamiento de imágenes para generar etiquetas de impresión

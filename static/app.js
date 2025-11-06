@@ -44,9 +44,7 @@ function initializeApp() {
             }
         }, 500); // Dar tiempo para que se cargue la página
     } else if (window.location.pathname.includes('/dashboard')) {
-        // Solo conectar WebSockets en el dashboard
-        console.log('initializeApp: Detectado dashboard, conectando WebSockets.');
-        // Asegurar que no haya conexiones activas antes de conectar
+
         if (!appState.socket || !appState.socket.connected) {
             connectWebSocket();
         }
@@ -504,7 +502,7 @@ function connectFlaskWebSocket() {
     });
 
     appState.flaskSocket.on('connect', () => {
-        console.log('Conexión WebSocket establecida con Flask');
+       
     });
 
     appState.flaskSocket.on('connect_error', (error) => {
@@ -558,7 +556,7 @@ function connectFlaskWebSocket() {
     });
 
     appState.flaskSocket.on('disconnect', (reason) => {
-        console.log('Desconectado del servidor Flask:', reason);
+        
     });
 }
 
@@ -836,7 +834,7 @@ async function handlePesar() {
             }
 
             if (response.errores && response.errores.length > 0) {
-                console.warn('Errores en la creación de empaques:', response.errores);
+                
                 response.errores.forEach(error => {
                     let mensajeError = '';
                     if (error.code === 'EPC_DUPLICADO') {

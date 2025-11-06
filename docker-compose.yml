@@ -17,6 +17,10 @@ services:
     ports:
       - "${PORT}:${PORT}"
 
+    volumes:
+      - "./localhost.pem:/app/localhost.pem" # Monta tu certificado
+      - "./localhost-key.pem:/app/localhost-key.pem"   # Monta tu clave privada
+
     devices:
       - "/dev:/dev"  # Mapear todo /dev para acceso dinámico a dispositivos
     privileged: true

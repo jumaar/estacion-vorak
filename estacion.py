@@ -1,7 +1,5 @@
-# Importar eventlet y hacer monkey patch antes de cualquier otro módulo de Flask
-import eventlet # type: ignore
-eventlet.monkey_patch()
-
+# Usar asyncio para concurrencia en lugar de eventlet
+import asyncio
 import os
 import serial # pyright: ignore[reportMissingModuleSource]
 from flask import Flask, jsonify, request, send_from_directory # pyright: ignore[reportMissingImports]
@@ -32,12 +30,8 @@ static_path = os.path.join(os.path.dirname(__file__), "static")
 app = Flask(__name__, static_folder=static_path, static_url_path='/')
 
 # --- Inicialización de SocketIO ---
-# Intentar usar eventlet si está disponible, de lo contrario threading
-try:
-    import eventlet # type: ignore
-    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet', logger=False, engineio_logger=False)
-except ImportError:
-    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', logger=False, engineio_logger=False)
+# Usar threading para manejar concurrencia (más simple y compatible)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', logger=False, engineio_logger=False)
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -53,13 +47,15 @@ hardware_state = {
 print_queue = queue.Queue() # Cola para los trabajos de impresión
 
 # --- Configuración de dispositivos ---
-IMPRESORA_PUERTO = "/dev/usb/lp2"  # Cambiado a puerto de impresora USB según logs del kernel
+IMPRESORA_PUERTO = "/dev/usb/lp2" # Cambiado a puerto de impresora USB según logs del kernel
 IMPRESORA_BAUDRATE = 9600 # Baudrate ya no es relevante para USB, pero se mantiene por compatibilidad de la función
 
 # Configuración RFID (placeholder - ajustar según hardware real)
 RFID_PUERTO = "/dev/ttyUSB1"  # Puerto para RFID reader
 RFID_BAUDRATE = 9600
 
+SERIAL_PORT_BASCULA = "/dev/ttyUSB0" 
+SERIAL_BAUDRATE = 9600
 
 def emit_component_status(socketio_instance, state, previous_status=None):
     """
@@ -84,8 +80,15 @@ def manage_bascula_connection(state, socketio_instance):
     Función que se ejecuta en un hilo. Mantiene el puerto serial abierto,
     lee continuamente y actualiza el estado compartido.
     """
-    serial_port = os.getenv("SERIAL_PORT_BASCULA")
-    serial_baudrate = int(os.getenv("SERIAL_BAUDRATE"))
+    # Obtener configuración con valores por defecto para evitar errores si no están en .env
+    serial_port = SERIAL_PORT_BASCULA
+    serial_baudrate_str = SERIAL_BAUDRATE
+    serial_baudrate = int(serial_baudrate_str)
+
+    if not serial_port:
+        app.logger.error("La variable de entorno SERIAL_PORT_BASCULA no está definida. El hilo de la báscula no puede iniciar.")
+        return
+
     previous_status = None
 
     while True:
@@ -140,7 +143,7 @@ def manage_bascula_connection(state, socketio_instance):
         # Emitir estado al desconectar
         previous_status = emit_component_status(socketio_instance, state, previous_status)
 
-        time.sleep(5)  # Esperar 5 segundos antes de reintentar
+        time.sleep(5) # Esperar 5 segundos antes de reintentar
         
 
 def manage_impresora_connection(state, socketio_instance):
@@ -279,16 +282,10 @@ def manage_print_queue(state, socketio_instance):
                     socketio_instance.emit('impresion_error', {'error': 'Impresora no conectada'})
                     continue # Salta al finally y luego a la siguiente iteración
 
-            # Para impresoras USB (/dev/usb/lpX), se abren como un archivo binario para escritura.
-            # No se usan parámetros seriales como baudrate.
-            app.logger.info(f"Abriendo puerto de impresora '{IMPRESORA_PUERTO}' para escritura...")
-            # Usamos 'wb' para escritura binaria y buffering=0 para deshabilitar el buffer de Python,
-            # enviando los datos directamente al driver del dispositivo.
+
             printer_file = open(IMPRESORA_PUERTO, 'wb', buffering=0)
 
-            app.logger.info("Enviando comandos de impresión...")
 
-            # Imprimir usando la conexión abierta
             imprimir_etiqueta(
                 printer_file,
                 print_job['fecha_hora'],
@@ -299,8 +296,6 @@ def manage_print_queue(state, socketio_instance):
             
             # Esperar a que todos los datos se envíen antes de continuar
             printer_file.flush()
-
-            app.logger.info(f"Trabajo de impresión completado para el peso: {print_job['peso']}g")
             socketio_instance.emit('impresion_completada', {'mensaje': 'Etiqueta impresa exitosamente'})
 
         except FileNotFoundError:
@@ -312,10 +307,9 @@ def manage_print_queue(state, socketio_instance):
         finally:
             # Asegurarse de que el puerto se cierre siempre, incluso si falla
             if printer_file:
-                app.logger.info("Cerrando puerto de impresora.")
-                printer_file.close()
+                
             # Marcar la tarea como completada en la cola
-            print_queue.task_done()
+               print_queue.task_done()
             # Pausa de 500ms para darle un respiro al hardware de la impresora
             time.sleep(0.2) # Reducimos la pausa para USB, que es más rápido y estable
 
@@ -453,7 +447,6 @@ def handle_imprimir_etiqueta(data):
 
         # Añadir el trabajo a la cola en lugar de imprimir directamente
         print_queue.put(print_job)
-        app.logger.info("Nuevo trabajo de impresión añadido a la cola.")
 
     except Exception as e:
         app.logger.error(f"Error en impresión: {e}")
@@ -463,14 +456,27 @@ def handle_imprimir_etiqueta(data):
 if __name__ == "__main__":
     port = int(os.getenv("PORT"))
     host = os.getenv("HOST")  # Valor por defecto para host
-    debug_mode = os.getenv("FLASK_DEBUG", "False").lower() == "true"
     try:
         # Iniciar el hilo consumidor de la cola de impresión
         print_thread = threading.Thread(target=manage_print_queue, args=(hardware_state, socketio), daemon=True)
         print_thread.start()
 
-        # Usar eventlet como servidor WSGI para mejor manejo de WebSocket
-        socketio.run(app, host=host, port=port, debug=debug_mode, use_reloader=False)
+        # Configurar SSL/TLS para HTTPS
+        ssl_cert_path = os.path.join(os.path.dirname(__file__), 'localhost.pem')
+        ssl_key_path = os.path.join(os.path.dirname(__file__), 'localhost-key.pem')
+        
+        # Crear contexto SSL
+        import ssl
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile=ssl_cert_path, keyfile=ssl_key_path)
+        
+        # Iniciar la aplicación Flask con Socket.IO y SSL
+        socketio.run(app,
+                     host=host,
+                     port=port,
+                     use_reloader=False,
+                     ssl_context=context,
+                     allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
         app.logger.info("Aplicación interrumpida por el usuario")
         # Detener los hilos de forma ordenada

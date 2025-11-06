@@ -12,6 +12,15 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     usbutils \
     fonts-dejavu \
+    libjpeg-dev \
+    zlib1g-dev \
+    libpng-dev \
+    libfreetype6-dev \
+    liblcms2-dev \
+    libwebp-dev \
+    libharfbuzz-dev \
+    libfribidi-dev \
+    libxcb1-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Establecer el directorio de trabajo en la aplicación.
@@ -25,4 +34,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar el resto del código de la aplicación.
 COPY . .
 # Comando para ejecutar la aplicación cuando el contenedor inicie.
-CMD ["python", "estacion.py"]
+CMD ["python3", "estacion.py"]
