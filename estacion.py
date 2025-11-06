@@ -1,20 +1,19 @@
-# Usar asyncio para concurrencia en lugar de eventlet
-import asyncio
 import os
-import serial # pyright: ignore[reportMissingModuleSource]
-from flask import Flask, jsonify, request, send_from_directory # pyright: ignore[reportMissingImports]
-from flask_socketio import SocketIO, emit, disconnect # pyright: ignore[reportMissingModuleSource]
-from datetime import datetime
-from dotenv import load_dotenv # pyright: ignore[reportMissingImports]
 import logging
 import threading
 import time
 import subprocess
 import queue
 import sys
+import ssl
+import serial # pyright: ignore[reportMissingModuleSource]
+from datetime import datetime
+from flask import Flask, jsonify, request, send_from_directory # pyright: ignore[reportMissingImports] 
+from flask_socketio import SocketIO, emit # pyright: ignore[reportMissingModuleSource]
+from dotenv import load_dotenv # pyright: ignore[reportMissingImports] 
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'impresion'))
-from imprimir import imprimir_etiqueta, verificar_estado_impresora # type: ignore
+from imprimir import imprimir_etiqueta # type: ignore
 
 # Cargar variables de entorno desde .env
 load_dotenv()
@@ -48,11 +47,9 @@ print_queue = queue.Queue() # Cola para los trabajos de impresión
 
 # --- Configuración de dispositivos ---
 IMPRESORA_PUERTO = "/dev/usb/lp2" # Cambiado a puerto de impresora USB según logs del kernel
-IMPRESORA_BAUDRATE = 9600 # Baudrate ya no es relevante para USB, pero se mantiene por compatibilidad de la función
 
 # Configuración RFID (placeholder - ajustar según hardware real)
 RFID_PUERTO = "/dev/ttyUSB1"  # Puerto para RFID reader
-RFID_BAUDRATE = 9600
 
 SERIAL_PORT_BASCULA = "/dev/ttyUSB0" 
 SERIAL_BAUDRATE = 9600
@@ -144,6 +141,15 @@ def manage_bascula_connection(state, socketio_instance):
         previous_status = emit_component_status(socketio_instance, state, previous_status)
 
         time.sleep(5) # Esperar 5 segundos antes de reintentar
+
+
+def verificar_estado_impresora(puerto_impresora):
+    try:
+        # Para dispositivos USB, la existencia del archivo es el indicador de conexión.
+        return os.path.exists(puerto_impresora)
+    except Exception:
+        # En caso de cualquier otro error, asumir que no está conectada.
+        return False
         
 
 def manage_impresora_connection(state, socketio_instance):
@@ -156,7 +162,7 @@ def manage_impresora_connection(state, socketio_instance):
     while True:
         try:
             # Verificar estado de la impresora
-            estado_actual = verificar_estado_impresora(IMPRESORA_PUERTO, IMPRESORA_BAUDRATE)
+            estado_actual = verificar_estado_impresora(IMPRESORA_PUERTO)
 
             with state["lock"]:
                 state["impresora_conectada"] = estado_actual
@@ -452,6 +458,33 @@ def handle_imprimir_etiqueta(data):
         app.logger.error(f"Error en impresión: {e}")
         emit('impresion_error', {'error': 'Error interno del servidor'})
 
+
+@socketio.on('reimprimir_etiqueta')
+def handle_reimprimir_etiqueta(data):
+    """
+    Manejador de Socket.IO específico para REIMPRIMIR una etiqueta.
+    Utiliza los datos guardados del último empaque, no el peso actual de la báscula.
+    """
+    app.logger.info(f"Solicitud de reimpresión recibida para el empaque: {data.get('epc')}")
+    try:
+        peso_guardado = data.get('peso_g')
+        if not peso_guardado or peso_guardado <= 0:
+            emit('impresion_error', {'error': 'Datos de peso inválidos para reimpresión.'})
+            return
+
+        # Crear el trabajo de impresión con los datos recibidos
+        print_job = {
+            'fecha_hora': datetime.fromisoformat(data['fecha_creacion']).strftime('%d/%m/%Y, %H:%M'),
+            'fecha_vencimiento': data.get('fecha_vencimiento', 'N/A'),
+            'precio_total': data.get('precio_total', 0),
+            'peso': peso_guardado
+        }
+        print_queue.put(print_job)
+
+    except Exception as e:
+        app.logger.error(f"Error en reimpresión: {e}")
+        emit('impresion_error', {'error': 'Error interno del servidor al reimprimir'})
+
 # --- Punto de Entrada ---
 if __name__ == "__main__":
     port = int(os.getenv("PORT"))
@@ -466,7 +499,7 @@ if __name__ == "__main__":
         ssl_key_path = os.path.join(os.path.dirname(__file__), 'localhost-key.pem')
         
         # Crear contexto SSL
-        import ssl
+       
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(certfile=ssl_cert_path, keyfile=ssl_key_path)
         

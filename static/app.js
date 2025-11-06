@@ -7,6 +7,7 @@ let appState = {
     productos: [],
     historial: [],
     pesoActual: 0.0,
+    ultimoEmpaque: null, // Para guardar los datos del último empaque para reimpresión
     basculaConectada: false,
     impresoraConectada: false, // Se mantiene para el estado local
     nestjsApiBaseUrl: null, // Nueva variable para la URL del backend NestJS
@@ -117,6 +118,24 @@ function setupEventListeners() {
     if (logoutBtn) {
         logoutBtn.addEventListener('click', logout);
     }
+
+    // Listener global para la tecla de flecha derecha en el dashboard
+    document.addEventListener('keydown', function(event) {
+        // Asegurarse de que solo se active en la página del dashboard
+        if (window.location.pathname.includes('/dashboard')) {
+            // Verificar si la tecla presionada es la flecha derecha
+            if (event.key === 'ArrowRight') {
+                // Prevenir cualquier acción por defecto del navegador
+                event.preventDefault();
+
+                // Simular un clic en el botón "PESAR"
+                const pesarBtn = document.getElementById('pesar-btn');
+                if (pesarBtn) {
+                    pesarBtn.click();
+                }
+            }
+        }
+    });
 }
 
 // Verificar sesión existente
@@ -933,6 +952,7 @@ function updateUltimoEmpaque(empaque) {
     const container = document.getElementById('ultimo-empaque-info');
     if (!container) return;
 
+    appState.ultimoEmpaque = empaque; // Guardar los datos para la reimpresión
     // Formatear el nombre del producto con ID
     const nombreConId = `${empaque.id_producto || 'N/A'}-${empaque.producto || 'Producto'}`;
     
@@ -943,8 +963,36 @@ function updateUltimoEmpaque(empaque) {
             <p><strong>Precio:</strong> $${empaque.precio_total}</p>
             <p><strong>EPC:</strong> ${empaque.epc}</p>
             <p><strong>Fecha:</strong> ${new Date(empaque.fecha_creacion).toLocaleString()}</p>
+            <button id="reimprimir-btn" class="btn btn-primary">Reimprimir</button>
         </div>
     `;
+
+    // Añadir el event listener para el nuevo botón
+    const reimprimirBtn = document.getElementById('reimprimir-btn');
+    if (reimprimirBtn) {
+        reimprimirBtn.addEventListener('click', handleReimprimir);
+    }
+}
+
+// Función para manejar la reimpresión
+function handleReimprimir() {
+    if (!appState.ultimoEmpaque) {
+        showMessage('No hay datos del último empaque para reimprimir.', 'error');
+        return;
+    }
+
+    if (!appState.impresoraConectada) {
+        showMessage('Impresora no conectada. No se puede reimprimir.', 'error');
+        return;
+    }
+
+    // Enviar los datos del último empaque guardado al servidor Flask para reimprimir
+    if (appState.flaskSocket && appState.flaskSocket.connected) {
+        showMessage('Enviando a reimprimir...', 'info');
+        appState.flaskSocket.emit('reimprimir_etiqueta', appState.ultimoEmpaque);
+    } else {
+        showMessage('No hay conexión con el servidor de impresión.', 'error');
+    }
 }
 
 // Cargar historial de productos de la estación

@@ -1,25 +1,4 @@
-import serial # type: ignore
-import time
 from PIL import Image, ImageDraw, ImageFont # type: ignore
-from datetime import datetime
-
-def verificar_estado_impresora(puerto_impresora, baudrate=None, timeout=None):
-    """
-    Verifica si la impresora está conectada. Para impresoras USB (/dev/usb/lp*),
-    la forma más fiable es simplemente comprobar si el archivo del dispositivo existe.
-    """
-    try:
-        import os
-        # Para dispositivos USB, la existencia del archivo es el indicador de conexión.
-        return os.path.exists(puerto_impresora)
-    except Exception as e:
-        # En caso de cualquier otro error, asumir que no está conectada.
-        return False
-
-# --- CONFIGURACIÓN PARA BLUETOOTH SERIAL ---
-PUERTO_COM = "/dev/rfcomm0"  # Puerto RFCOMM para Bluetooth
-VELOCIDAD_BAUD = 9600
-# -------------------------------------
 
 # --- PARÁMETROS DE LA ETIQUETA ---
 ANCHO_DOTS = 320 # 40mm

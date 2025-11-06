@@ -37,19 +37,18 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/estacion-vorak/${{ matrix.service }}
-          tags: type=sha,format=short
-      - name: Set build paths based on service
-        id: paths
-        run: |
-          SERVICE_NAME=${{ matrix.service }}
-          if [ "$SERVICE_NAME" = "estacion" ]; then echo "build_context=./" >> $GITHUB_OUTPUT && echo "dockerfile_path=./Dockerfile" >> $GITHUB_OUTPUT;
-          fi
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/estacion-vorak/estacion
+          tags: |
+            type=sha,format=short
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: ${{ steps.paths.outputs.build_context }}
-          file: ${{ steps.paths.outputs.dockerfile_path }}
+          context: ./
+          file: ./Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Opcional: Añadir cache para acelerar builds futuros
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -121,9 +121,10 @@ jobs:
           eval $(ssh-agent -s)
           DISPLAY=:0 SSH_ASKPASS=./askpass.sh ssh-add ~/.ssh/id_rsa
 
-          ssh -o StrictHostKeyChecking=no ${{ secrets.IOT_USERNAME }}@${{ matrix.host }} << 'EOF'
+          # Usamos un heredoc sin comillas para permitir la expansión de variables de GitHub
+          ssh -o StrictHostKeyChecking=no ${{ secrets.IOT_USERNAME }}@${{ matrix.host }} << EOF
+            set -e
             echo "--- Iniciando despliegue en ${{ matrix.host }} con tag ${{ github.ref_name }} ---"
-            
             cd /home/${{ secrets.IOT_USERNAME }}/estacion-vorak
             
             echo "Actualizando paquetes del sistema operativo..."
@@ -147,12 +148,14 @@ jobs:
             
             echo "Asegurando permisos de ejecución para el script de despliegue..."
             chmod +x deploy.sh
-            
+
+            # Exportamos la variable IMAGE_TAG para que el script deploy.sh la pueda usar
+            export IMAGE_TAG=${{ github.ref_name }}
             ./deploy.sh
-            
+
             echo "--- Despliegue completado en ${{ matrix.host }} ---"
-            echo "Iniciando reinicio en segundo plano..."
-            
-            (sleep 5 && sudo reboot) &
-            
+            echo "El dispositivo se reiniciará para aplicar todos los cambios."
+            # Usamos 'sudo -n' para ejecutar sin interacción.
+            # El comando 'nohup ... &' asegura que el reinicio se ejecute incluso si la sesión SSH se cierra.
+            nohup sh -c 'sleep 5 && sudo -n reboot' > /dev/null 2>&1 &
           EOF
