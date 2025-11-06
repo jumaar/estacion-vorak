@@ -1,0 +1,158 @@
+# .github/workflows/release-production.yml
+
+name: CI/CD - Release to Production
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: ${{ github.repository_owner }}
+
+jobs:
+  # =================================================================================
+  # JOB 1: Construye y publica imágenes para Producción (etiquetadas con Git Tag)
+  # =================================================================================
+  build-and-push-production:
+    name: Build and Push (Production)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [estacion]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/estacion-vorak/${{ matrix.service }}
+          tags: type=ref,event=tag
+      - name: Set build paths based on service
+        id: paths
+        run: |
+          SERVICE_NAME=${{ matrix.service }}
+          if [ "$SERVICE_NAME" = "estacion" ]; then echo "build_context=./" >> $GITHUB_OUTPUT && echo "dockerfile_path=./Dockerfile" >> $GITHUB_OUTPUT;
+          fi
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ steps.paths.outputs.build_context }}
+          file: ${{ steps.paths.outputs.dockerfile_path }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # =================================================================================
+  # JOB 2: Prepara la matriz de despliegue a partir del inventario
+  # =================================================================================
+  prepare-deployment-matrix:
+    name: Prepare Deployment Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      hosts: ${{ steps.set-matrix.outputs.hosts }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Create matrix from inventory
+        id: set-matrix
+        run: echo "hosts=$(jq -c '.devices' .github/workflows/fleet-inventory.json)" >> $GITHUB_OUTPUT
+
+  # =================================================================================
+  # JOB 3: Despliega en la flota de dispositivos IoT de forma secuencial
+  # =================================================================================
+  deploy-to-production:
+    name: Deploy to Production Fleet
+    needs: [build-and-push-production, prepare-deployment-matrix]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        host: ${{ fromJson(needs.prepare-deployment-matrix.outputs.hosts) }}
+      max-parallel: 1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Cloudflared
+        run: |
+          wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          sudo mv cloudflared-linux-amd64 /usr/local/bin/cloudflared
+          sudo chmod +x /usr/local/bin/cloudflared
+      - name: Setup SSH and Cloudflare
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.IOT_PRIVATE_KEY }}
+        run: |
+          # Install Cloudflared
+          wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          sudo mv cloudflared-linux-amd64 /usr/local/bin/cloudflared
+          sudo chmod +x /usr/local/bin/cloudflared
+          
+          # Setup SSH directory and files
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "Host ${{ matrix.host }}" >> ~/.ssh/config
+          echo "  ProxyCommand /usr/local/bin/cloudflared access ssh --hostname %h" >> ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: Deploy to ${{ matrix.host }}
+        env:
+          SSH_PASSPHRASE: ${{ secrets.IOT_PASSPHRASE }}
+        run: |
+          echo 'echo "$SSH_PASSPHRASE"' > askpass.sh
+          chmod +x askpass.sh
+
+          eval $(ssh-agent -s)
+          DISPLAY=:0 SSH_ASKPASS=./askpass.sh ssh-add ~/.ssh/id_rsa
+
+          ssh -o StrictHostKeyChecking=no ${{ secrets.IOT_USERNAME }}@${{ matrix.host }} << 'EOF'
+            echo "--- Iniciando despliegue en ${{ matrix.host }} con tag ${{ github.ref_name }} ---"
+            
+            cd /home/${{ secrets.IOT_USERNAME }}/estacion-vorak
+            
+            echo "Actualizando paquetes del sistema operativo..."
+            sudo apt-get update
+            sudo apt-get upgrade -y
+            echo "✅ Sistema operativo actualizado."
+            
+            export IMAGE_TAG=${{ github.ref_name }}
+            
+            set -e 
+            
+            echo "Iniciando proceso de DESPLIEGUE..."
+            echo "Fecha: $(date)"
+            echo "Versión a desplegar (IMAGE_TAG): ${IMAGE_TAG}"
+            echo "----------------------------------------------------"
+
+            echo "Forzando actualización desde github (origin/main)..."
+            git fetch origin main
+            git reset --hard origin/main
+            echo "✅ Código fuente actualizado."
+            
+            echo "Asegurando permisos de ejecución para el script de despliegue..."
+            chmod +x deploy.sh
+            
+            ./deploy.sh
+            
+            echo "--- Despliegue completado en ${{ matrix.host }} ---"
+            echo "Iniciando reinicio en segundo plano..."
+            
+            (sleep 5 && sudo reboot) &
+            
+          EOF

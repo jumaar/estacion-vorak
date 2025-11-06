@@ -1,0 +1,25 @@
+services:
+  # =====================================================================
+  # Servicio para la Estación de Pesaje (Báscula Inteligente)
+  # =====================================================================
+  estacion:
+    # Nombre del contenedor para fácil identificación.
+    container_name: vorak-estacion
+    # Construye la imagen a partir del Dockerfile en el directorio especificado.
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    # Carga las variables de entorno desde el archivo .env en la raíz del proyecto.
+    # Asegúrate de que este archivo exista y esté configurado.
+    env_file:
+      - ./.env
+    # El puerto del contenedor debe coincidir con el que usa la app Flask (ej. 5000).
+    ports:
+      - "${PORT}:${PORT}"
+
+    devices:
+      - "/dev:/dev"  # Mapear todo /dev para acceso dinámico a dispositivos
+    privileged: true
+    # Política de reinicio: siempre reinicia el contenedor si se detiene,
+    # a menos que se haya detenido manualmente.
+    restart: unless-stopped
