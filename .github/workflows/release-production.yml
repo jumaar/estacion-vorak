@@ -91,35 +91,27 @@ jobs:
         uses: actions/checkout@v4
       - name: Install Cloudflared
         run: |
-          wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
-          sudo mv cloudflared-linux-amd64 /usr/local/bin/cloudflared
-          sudo chmod +x /usr/local/bin/cloudflared
+          curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i cloudflared.deb
       - name: Setup SSH and Cloudflare
         env:
           SSH_PRIVATE_KEY: ${{ secrets.IOT_PRIVATE_KEY }}
         run: |
-          # Install Cloudflared
-          wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
-          sudo mv cloudflared-linux-amd64 /usr/local/bin/cloudflared
-          sudo chmod +x /usr/local/bin/cloudflared
-          
           # Setup SSH directory and files
           mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
+          echo "${{ secrets.IOT_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
           echo "Host ${{ matrix.host }}" >> ~/.ssh/config
           echo "  ProxyCommand /usr/local/bin/cloudflared access ssh --hostname %h" >> ~/.ssh/config
           chmod 600 ~/.ssh/config
 
       - name: Deploy to ${{ matrix.host }}
-        env:
-          SSH_PASSPHRASE: ${{ secrets.IOT_PASSPHRASE }}
         run: |
-          echo 'echo "$SSH_PASSPHRASE"' > askpass.sh
+          echo 'echo "${{ secrets.IOT_PASSPHRASE }}"' > askpass.sh
           chmod +x askpass.sh
 
           eval $(ssh-agent -s)
-          DISPLAY=:0 SSH_ASKPASS=./askpass.sh ssh-add ~/.ssh/id_rsa
+          DISPLAY=:0 SSH_ASKPASS=./askpass.sh ssh-add ~/.ssh/id_ed25519
 
           # Usamos un heredoc sin comillas para permitir la expansión de variables de GitHub
           ssh -o StrictHostKeyChecking=no ${{ secrets.IOT_USERNAME }}@${{ matrix.host }} << EOF
@@ -127,24 +119,12 @@ jobs:
             echo "--- Iniciando despliegue en ${{ matrix.host }} con tag ${{ github.ref_name }} ---"
             cd /home/${{ secrets.IOT_USERNAME }}/estacion-vorak
             
-            echo "Actualizando paquetes del sistema operativo..."
-            sudo apt-get update
-            sudo apt-get upgrade -y
-            echo "✅ Sistema operativo actualizado."
-            
-            export IMAGE_TAG=${{ github.ref_name }}
-            
-            set -e 
-            
-            echo "Iniciando proceso de DESPLIEGUE..."
-            echo "Fecha: $(date)"
-            echo "Versión a desplegar (IMAGE_TAG): ${IMAGE_TAG}"
-            echo "----------------------------------------------------"
-
-            echo "Forzando actualización desde github (origin/main)..."
-            git fetch origin main
-            git reset --hard origin/main
+            echo "Actualizando código fuente a la versión del tag ${{ github.ref_name }}..."
+            git fetch --all --tags
+            git checkout tags/${{ github.ref_name }} -f
             echo "✅ Código fuente actualizado."
+            
+            echo "Iniciando proceso de despliegue con script local..."
             
             echo "Asegurando permisos de ejecución para el script de despliegue..."
             chmod +x deploy.sh
