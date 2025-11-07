@@ -120,7 +120,7 @@ jobs:
             cd /home/${{ secrets.IOT_USERNAME }}/estacion-vorak
             
             echo "Actualizando código fuente a la versión del tag ${{ github.ref_name }}..."
-            git fetch --all --tags
+            git fetch --all --tags --force
             git checkout tags/${{ github.ref_name }} -f
             echo "✅ Código fuente actualizado."
             
