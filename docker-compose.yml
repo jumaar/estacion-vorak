@@ -4,11 +4,9 @@ services:
   # =====================================================================
   estacion:
     # Nombre del contenedor para fácil identificación.
-    container_name: vorak-estacion
-    # Construye la imagen a partir del Dockerfile en el directorio especificado.
-    build:
-      context: ./
-      dockerfile: Dockerfile
+    container_name: vorak-estacion-edge
+    # Usa la imagen del registro de contenedores de GitHub. La etiqueta se pasa desde el .env
+    image: ghcr.io/jumaar/estacion-vorak/estacion:${IMAGE_TAG:-latest}
     # Carga las variables de entorno desde el archivo .env en la raíz del proyecto.
     # Asegúrate de que este archivo exista y esté configurado.
     env_file:

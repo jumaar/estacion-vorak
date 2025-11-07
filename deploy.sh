@@ -26,10 +26,10 @@ else
 fi
 
 echo "Descargando las imágenes más recientes..."
-docker compose -p estacion --env-file ./.env pull
+docker compose -p estacion --env-file ./.env pull estacion
 
 echo "Redesplegando la pila de servicios con la nueva versión..."
-docker compose -p estacion --env-file ./.env up -d --no-build --remove-orphans --force-recreate
+docker compose -p estacion --env-file ./.env up -d --remove-orphans --force-recreate
 
 echo "Limpiando imágenes de Docker antiguas (dangling)..."
 docker image prune -f
