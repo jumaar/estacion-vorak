@@ -99,8 +99,8 @@ jobs:
         run: |
           # Setup SSH directory and files
           mkdir -p ~/.ssh
-          echo "${{ secrets.IOT_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
+          echo "${{ secrets.IOT_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
           echo "Host ${{ matrix.host }}" >> ~/.ssh/config
           echo "  ProxyCommand /usr/local/bin/cloudflared access ssh --hostname %h" >> ~/.ssh/config
           chmod 600 ~/.ssh/config
@@ -111,7 +111,7 @@ jobs:
           chmod +x askpass.sh
 
           eval $(ssh-agent -s)
-          DISPLAY=:0 SSH_ASKPASS=./askpass.sh ssh-add ~/.ssh/id_ed25519
+          DISPLAY=:0 SSH_ASKPASS=./askpass.sh ssh-add ~/.ssh/id_rsa
 
           # Usamos un heredoc sin comillas para permitir la expansión de variables de GitHub
           ssh -o StrictHostKeyChecking=no ${{ secrets.IOT_USERNAME }}@${{ matrix.host }} << EOF

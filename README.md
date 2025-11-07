@@ -149,34 +149,36 @@ Para que el navegador pueda ejecutarse en modo kiosco, es necesario un entorno g
 
 3.  **Generar Claves SSH y Configurar Secretos de GitHub**:
     Este es el paso más importante para habilitar el despliegue automático.
-    
-    a. **En la estación**, genera un nuevo par de claves SSH:
-    ```bash
-    # Usa el algoritmo ed25519, que es moderno y seguro
-    ssh-keygen -t ed25519 -C "github-actions-deploy"
-    ```
-    - Cuando pregunte por la ubicación, presiona **Enter** (para usar `~/.ssh/id_ed25519`).
-    - Cuando pida una `passphrase`, **introduce una contraseña segura**.
+    Usaremos un par de claves SSH: la **clave pública** (la "cerradura") se queda en la estación, y la **clave privada** (la "llave") se guarda de forma segura en GitHub.
 
-    b. **Autoriza la clave** para que GitHub Actions pueda conectarse:
+    a. **En la estación**, genera el par de claves (llave y cerradura):
     ```bash
-    cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+    # Genera una clave tipo RSA de 4096 bits para máxima compatibilidad
+    ssh-keygen -t rsa -b 4096 -C "github-actions-deploy-rsa"
+    ```
+    - Cuando te pregunte por la ubicación del archivo, presiona **Enter** para aceptar la ruta por defecto (`~/.ssh/id_rsa`).
+    - Cuando pida una `passphrase`, **introduce una contraseña segura**. La necesitarás para un secreto de GitHub.
+
+    b. **En la estación**, instala la "cerradura" (la clave pública) para autorizar conexiones:
+    ```bash
+    cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
     chmod 600 ~/.ssh/authorized_keys
     ```
 
-    c. **Copia los contenidos** para usarlos como secretos en GitHub:
+    c. **Prepara los secretos** para guardarlos en GitHub:
     ```bash
-    # 1. Copia la CLAVE PRIVADA. Su contenido va en el secreto IOT_PRIVATE_KEY.
-    cat ~/.ssh/id_ed25519
+    # 1. MUESTRA LA LLAVE SECRETA. El contenido de este comando es lo que debes copiar.
+    # Este texto es extremadamente sensible.
+    cat ~/.ssh/id_rsa
     
-    # 2. La contraseña (passphrase) que elegiste va en el secreto IOT_PASSPHRASE.
+    # 2. La CONTRASEÑA (passphrase) que elegiste en el paso 'a' va en el secreto IOT_PASSPHRASE.
     
-    # 3. Tu nombre de usuario en la estación va en el secreto IOT_USERNAME.
+    # 3. Tu NOMBRE DE USUARIO en la estación va en el secreto IOT_USERNAME.
     echo $USER 
     ```
     
-    d. **En tu repositorio de GitHub**, ve a `Settings > Secrets and variables > Actions` y crea los siguientes secretos read package:
-    - `IOT_PRIVATE_KEY`: Pega el contenido completo de tu clave privada (desde `-----BEGIN...` hasta `-----END...`).
+    d. **En tu repositorio de GitHub**, ve a `Settings > Secrets and variables > Actions` y crea/actualiza los siguientes secretos:
+    - `IOT_PRIVATE_KEY`: Pega el contenido completo de tu clave privada (el resultado de `cat ~/.ssh/id_rsa`). Debe empezar con `-----BEGIN...` y terminar con `-----END...`.
     - `IOT_PASSPHRASE`: Escribe la contraseña que creaste para la clave SSH.
     - `IOT_USERNAME`: Escribe tu nombre de usuario en la estación (ej. `jumaar`).
 
