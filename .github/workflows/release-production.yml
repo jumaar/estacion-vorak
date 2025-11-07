@@ -134,8 +134,8 @@ jobs:
             ./deploy.sh
 
             echo "--- Despliegue completado en ${{ matrix.host }} ---"
-            echo "El dispositivo se reiniciará para aplicar todos los cambios."
-            # Usamos 'sudo -n' para ejecutar sin interacción.
-            # El comando 'nohup ... &' asegura que el reinicio se ejecute incluso si la sesión SSH se cierra.
-            nohup sh -c 'sleep 5 && sudo -n reboot' > /dev/null 2>&1 &
+            echo "Iniciando reinicio en segundo plano..."
+            
+            (sleep 5 && sudo reboot) &
+            
           EOF

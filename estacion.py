@@ -46,10 +46,9 @@ hardware_state = {
 print_queue = queue.Queue() # Cola para los trabajos de impresión
 
 # --- Configuración de dispositivos ---
-IMPRESORA_PUERTO = "/dev/usb/lp2" # Cambiado a puerto de impresora USB según logs del kernel
+IMPRESORA_PUERTO = "/dev/usb/lp1" 
 
-# Configuración RFID (placeholder - ajustar según hardware real)
-RFID_PUERTO = "/dev/ttyUSB1"  # Puerto para RFID reader
+RFID_PUERTO = "/dev/ttyUSB1"  
 
 SERIAL_PORT_BASCULA = "/dev/ttyUSB0" 
 SERIAL_BAUDRATE = 9600

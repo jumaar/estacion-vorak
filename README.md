@@ -92,25 +92,67 @@ Para que el navegador pueda ejecutarse en modo kiosco, es necesario un entorno g
 
 2.  **Instalar Gestor de Red y Navegador**:
     Para poder gestionar las conexiones de red (especialmente Wi-Fi) desde la interfaz gráfica y tener un navegador para el modo kiosco.
-    ```bash
-    sudo apt-get install -y network-manager-gnome chromium
-    ```
-3.  **Configurar el inicio automático (Modo Kiosco)**:
-    Editaremos el archivo `.profile` del usuario para que el navegador se inicie automáticamente al entrar a la sesión gráfica.
-    ```bash
-    nano ~/.profile
-    ```
-    Añade el siguiente bloque al final del archivo:
-    ```bash
-    # Iniciar el modo kiosco de Chromium al iniciar la sesión gráfica
-    if [ -n "$DISPLAY" ]; then
-      # Espera 30s para dar tiempo a que los servicios de Docker se inicien tras un reinicio
-      (sleep 30 && /usr/bin/chromium --kiosk --incognito --disable-pinch --no-first-run --ignore-certificate-errors https://localhost:5000) &
-    fi
-    ```
-    Guarda el archivo (`Ctrl+X`, `Y`, `Enter`).
 
-4.  **Reiniciar el sistema**:
+    ```bash
+    # Instalar el gestor de red
+    sudo apt-get install -y network-manager-gnome
+
+    # Descargar e instalar Google Chrome
+    curl -L -o google-chrome-stable_current_amd64.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+    sudo apt install -y ./google-chrome-stable_current_amd64.deb
+
+    # Limpiar el archivo .deb descargado
+    rm google-chrome-stable_current_amd64.deb
+    ```
+
+3.  **Asegurar el Módulo del Kernel para Impresora USB**:
+    En algunas instalaciones mínimas de Debian, el módulo del kernel para impresoras USB (`usblp`) no se carga por defecto. Esto es necesario para que el sistema cree el archivo de dispositivo `/dev/usb/lpX`.
+
+    ```bash
+    # Cargar el módulo en la sesión actual para probar de inmediato
+    sudo modprobe usblp
+    # Asegurar que el módulo se cargue en cada arranque del sistema
+    echo "usblp" | sudo tee -a /etc/modules
+    ```
+
+4.  **Deshabilitar el Servicio de Impresión CUPS (¡Importante!)**:
+    El sistema operativo intentará gestionar la impresora USB automáticamente a través de un servicio llamado CUPS. Esto entra en conflicto con nuestro script, que necesita acceso directo al dispositivo para enviar comandos de bajo nivel. Debemos deshabilitar CUPS para evitar esta interferencia.
+
+    ```bash
+    # Detener el servicio CUPS si se está ejecutando actualmente
+    sudo systemctl stop cups
+
+    # Deshabilitar CUPS para que no se inicie automáticamente en el arranque
+    sudo systemctl disable cups
+    ```
+    Este paso es crucial para que el script `estacion.py` pueda comunicarse directamente con la impresora.
+
+5.  **Configurar el Modo Kiosco (Método Manual)**:
+    El flag `--ignore-certificate-errors` de Chromium ya no es fiable. El método más seguro es importar manualmente nuestro certificado SSL local y crear una "app" para la página, que se ejecutará en modo kiosco.
+
+    a. **Inicia sesión en el escritorio de la estación** con el usuario `jumaar`.
+
+    b. **Importa el certificado en Chromium**:
+    - Abre una terminal y navega al directorio del proyecto: `cd ~/estacion-vorak`.
+    - Abre Chrome.
+    - Ve a `chrome://certificate-manager/localcerts/usercerts`.
+    - En la pestaña `Autoridades`, haz clic en `Importar`.
+    - Se abrirá un explorador de archivos. Navega a la carpeta del proyecto (`/home/jumaar/estacion-vorak`).
+    - Selecciona el archivo `localhost.pem` y haz clic en `Abrir`.
+    - Marca la casilla **"Confiar en este certificado para identificar sitios web"** y haz clic en `Aceptar`.
+
+    c. **Crea la aplicación de Kiosco**:
+    - En Chromium, navega a `https://localhost:5000`. La página debería cargar sin advertencias de seguridad.
+    - Haz clic en el menú de tres puntos de Chromium (arriba a la derecha).
+    - Selecciona `Guardar y compartir` > `Crear acceso directo...`.
+    - Dale un nombre (ej. "VORAK Estación"), marca la casilla **"Abrir como ventana"** y haz clic en `Crear`.
+
+    d. **Configura el inicio automático**:
+    - Una vez creada la aplicación, ve a la página de aplicaciones de Chromium escribiendo `chrome://apps` en la barra de direcciones.
+    - Haz clic derecho sobre la nueva aplicación ("VORAK Estación").
+    - En el menú que aparece, selecciona **"Iniciar aplicación al iniciar sesión"**.
+
+6.  **Reiniciar el sistema**:
     ```bash
     sudo reboot
     ```
