@@ -74,12 +74,6 @@ Una vez dentro por SSH local, instalaremos Cloudflare Tunnel para poder acceder 
     # Ahora, ve a tu dashboard de Cloudflare Zero Trust y configura un túnel que apunte a 'ssh://localhost:22' en este dispositivo.
     ```
 
-### 1.4. Permisos de Hardware y Docker
-
-Ahora que tenemos acceso remoto, daremos al usuario `estacion` y los permisos necesarios para interactuar con el hardware y Docker.
-
-
-### 1.5. Instalación de Dependencias Clave
 
 1.  **Instalar Git y Docker**:
     ```bash
@@ -97,9 +91,19 @@ Ahora que tenemos acceso remoto, daremos al usuario `estacion` y los permisos ne
     
     # Instalar Git, Docker Engine, CLI y Compose
     sudo apt-get install -y git docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+### 1.4. Permisos de Hardware y Docker
+
+Ahora que tenemos acceso remoto, daremos al usuario `estacion` los permisos necesarios para interactuar con el hardware (impresora, báscula) y para ejecutar comandos de Docker sin `sudo`.
+
+1.  **Añadir el usuario `estacion` a los grupos requeridos**:
+    ```bash
+    # Permite a la aplicación acceder a puertos serie/USB (báscula, impresora)
+    sudo usermod -aG dialout estacion
+    
+    # Permite ejecutar comandos de Docker sin `sudo` (¡CRUCIAL PARA EL DESPLIEGUE!)
+    sudo usermod -aG docker estacion
     ```
-
-
 4.  **Eliminar el Servicio de Impresión CUPS (¡Importante!)**:
     El sistema operativo puede instalar un servicio de impresión llamado CUPS, que gestiona impresoras de forma automática. Esto entra en conflicto con nuestro script, que necesita acceso directo y exclusivo al dispositivo USB. Para evitar esta interferencia, lo eliminaremos por completo.
 
@@ -110,6 +114,24 @@ Ahora que tenemos acceso remoto, daremos al usuario `estacion` y los permisos ne
     sudo apt-get autoremove -y
     ```
     Este paso es crucial para que el script `estacion.py` pueda comunicarse directamente con la impresora sin que otro servicio "secuestre" el puerto.
+
+2.  **Reiniciar la estación para aplicar los cambios de grupo**:
+    Este paso es **obligatorio**. Los cambios de membresía de grupo solo tienen efecto después de un reinicio o un nuevo inicio de sesión.
+        
+    ```bash
+    sudo reboot
+    ```
+
+    
+2.  **Verificar la instalación de Docker**:
+    Después del reinicio, vuelve a conectarte por SSH y ejecuta este comando **sin `sudo`**. Debería funcionar y mostrar una salida vacía o la versión de Docker, pero no un error de permisos.
+    ```bash
+    docker ps
+    # Si este comando funciona sin 'sudo', ¡la configuración es correcta!
+    ```
+
+
+
 
 
 ### 1.5. Preparación para el Despliegue Automatizado
@@ -238,5 +260,3 @@ Para desplegar una nueva versión en todas las estaciones de la flota, simplemen
     sudo reboot
     ```
     Al reiniciar, inicia sesión como `estacion`. El escritorio aparecerá y, tras 30 segundos, el navegador se abrirá en modo kiosco.
-
-

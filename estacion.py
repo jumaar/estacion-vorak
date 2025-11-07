@@ -6,6 +6,7 @@ import subprocess
 import queue
 import sys
 import ssl
+import serial.tools.list_ports # pyright: ignore[reportMissingModuleSource]
 import serial # pyright: ignore[reportMissingModuleSource]
 from datetime import datetime
 from flask import Flask, jsonify, request, send_from_directory # pyright: ignore[reportMissingImports] 
@@ -46,12 +47,40 @@ hardware_state = {
 print_queue = queue.Queue() # Cola para los trabajos de impresión
 
 # --- Configuración de dispositivos ---
-IMPRESORA_PUERTO = "/dev/usb/lp1" 
 
-RFID_PUERTO = "/dev/ttyUSB1"  
+# IDs de hardware para la detección automática de puertos.
+# Extraídos de tus logs:
+# Báscula (CH341 Serial): idVendor=1a86, idProduct=7523
+# Impresora (GEZHI micro-printer): idVendor=0483, idProduct=5720
+BASCULA_VID = "1A86"
+BASCULA_PID = "7523"
+IMPRESORA_VID = "0483"
+IMPRESORA_PID = "5720"
 
-SERIAL_PORT_BASCULA = "/dev/ttyUSB0" 
-SERIAL_BAUDRATE = 9600
+def find_serial_device_port(vid, pid):
+    """Busca un dispositivo serie por su Vendor ID y Product ID y devuelve su puerto."""
+    vid_pid_str = f"{vid}:{pid}".upper()
+    ports = serial.tools.list_ports.comports()
+    for port in ports:
+        if vid_pid_str in port.hwid:
+            app.logger.info(f"Dispositivo {port.description} encontrado en {port.device} con HWID {port.hwid}")
+            return port.device
+    return None
+
+def find_printer_port(vid, pid):
+    """Busca una impresora USB por su Vendor ID y Product ID."""
+    # Las impresoras usblp a menudo no aparecen en list_ports, así que buscamos en /dev
+    # El nombre del dispositivo suele ser /dev/usb/lpX
+    for i in range(10): # Buscar de lp0 a lp9
+        dev_path = f"/dev/usb/lp{i}"
+        if os.path.exists(dev_path):
+            # No podemos obtener VID/PID directamente, pero es una suposición razonable si solo hay una.
+            # Esta función ahora principalmente valida la existencia. La detección real se basa en la conexión.
+            app.logger.info(f"Potencial impresora encontrada en {dev_path}. Se verificará su estado.")
+            # Devolvemos un path genérico que se pueda comprobar.
+            return dev_path
+    return "/dev/usb/lp0" # Devolver un valor por defecto si no se encuentra nada.
+
 
 def emit_component_status(socketio_instance, state, previous_status=None):
     """
@@ -77,17 +106,15 @@ def manage_bascula_connection(state, socketio_instance):
     lee continuamente y actualiza el estado compartido.
     """
     # Obtener configuración con valores por defecto para evitar errores si no están en .env
-    serial_port = SERIAL_PORT_BASCULA
-    serial_baudrate_str = SERIAL_BAUDRATE
-    serial_baudrate = int(serial_baudrate_str)
-
-    if not serial_port:
-        app.logger.error("La variable de entorno SERIAL_PORT_BASCULA no está definida. El hilo de la báscula no puede iniciar.")
-        return
-
+    serial_baudrate = 9600
     previous_status = None
 
     while True:
+        serial_port = find_serial_device_port(BASCULA_VID, BASCULA_PID)
+        if not serial_port:
+            app.logger.warning(f"Báscula (VID:{BASCULA_VID}, PID:{BASCULA_PID}) no encontrada. Reintentando en 5 segundos...")
+            time.sleep(5)
+            continue
         try:
             # Parámetros comunes: 8 data bits, no parity, 1 stop bit (8N1)
             with serial.Serial(serial_port, serial_baudrate, timeout=1, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE) as ser:
@@ -142,10 +169,14 @@ def manage_bascula_connection(state, socketio_instance):
         time.sleep(5) # Esperar 5 segundos antes de reintentar
 
 
-def verificar_estado_impresora(puerto_impresora):
+def verificar_estado_impresora():
     try:
-        # Para dispositivos USB, la existencia del archivo es el indicador de conexión.
-        return os.path.exists(puerto_impresora)
+        # Para impresoras USB, la existencia del archivo del dispositivo es el mejor indicador de conexión.
+        # Buscamos dinámicamente entre lp0, lp1, etc.
+        for i in range(10):
+            if os.path.exists(f"/dev/usb/lp{i}"):
+                return True
+        return False
     except Exception:
         # En caso de cualquier otro error, asumir que no está conectada.
         return False
@@ -160,8 +191,8 @@ def manage_impresora_connection(state, socketio_instance):
 
     while True:
         try:
-            # Verificar estado de la impresora
-            estado_actual = verificar_estado_impresora(IMPRESORA_PUERTO)
+            # Verificar estado de la impresora (la función ahora busca en varios puertos)
+            estado_actual = verificar_estado_impresora()
 
             with state["lock"]:
                 state["impresora_conectada"] = estado_actual
@@ -286,6 +317,14 @@ def manage_print_queue(state, socketio_instance):
                     app.logger.warning("Trabajo de impresión descartado: Impresora no conectada.")
                     socketio_instance.emit('impresion_error', {'error': 'Impresora no conectada'})
                     continue # Salta al finally y luego a la siguiente iteración
+
+            # Encontrar el puerto de la impresora dinámicamente antes de abrirlo
+            IMPRESORA_PUERTO = None
+            for i in range(10):
+                if os.path.exists(f"/dev/usb/lp{i}"):
+                    IMPRESORA_PUERTO = f"/dev/usb/lp{i}"
+                    app.logger.info(f"Imprimiendo en el puerto {IMPRESORA_PUERTO}")
+                    break
 
 
             printer_file = open(IMPRESORA_PUERTO, 'wb', buffering=0)
