@@ -26,137 +26,91 @@ Esta guía detalla los pasos para configurar una nueva estación de pesaje desde
 
 ## Fase 1: Configuración Inicial del Dispositivo (One-Time Setup)
 
-### 1.1. Requisitos Previos
+### 1.1. Instalación del Sistema Operativo
 
-- Un PC con Debian 12 (o superior) instalado.
-- Acceso físico a la máquina y conexión a internet.
-- Hardware de la estación: Báscula, Impresora de etiquetas, Lector RFID.
+1.  **Instalar Linux Mint**: Comienza con una instalación limpia de [Linux Mint](https://linuxmint.com/) (versión 21 o superior recomendada) en el PC de la estación Crear el usuario `estacion`.
+2.  **Requisitos**: Asegúrate de tener acceso físico a la máquina para la instalación inicial y una conexión a internet activa.
+3.  **Hardware**: Conecta el hardware de la estación (Báscula, Impresora de etiquetas, Lector RFID) al PC.
+4.  actualizar linux mint desde el instalador de actualizaciones
 
-### 1.2. Creación de Usuario y Permisos
-
-Es crucial operar con un usuario no-root por seguridad. Crearemos un usuario `jumaar` y le daremos los permisos necesarios.
-
-1.  **Crear el usuario `jumaar`**:
+5.   Necesitarás esta IP para conectarte desde tu PC de desarrollo.
     ```bash
-    sudo adduser jumaar
+    hostname -I
+    # Anota la dirección IP que aparezca (ej. 192.168.0.102)
+    ```
+1.  **Instalar el servidor SSH**:
+    Abre una terminal en la máquina de la estación e instala el servidor OpenSSH.
+
+    ```bash
+    sudo apt install openssh-server
+    ```
+4.  **A el usuario `estacion` darle permisos `sudo`**:
+    Aún en la terminal física de la estación, dar permisos.
+
+    ```bash
+    sudo usermod -aG sudo estacion
+    sudo reboot
+    ```
+    **¡Listo!** Ahora puedes desconectar el teclado y monitor de la estación. El resto de la configuración se hará de forma remota.
+
+5.  **Conectarse desde el PC de Desarrollo**:
+    Desde tu propia máquina, conéctate a la estación usando la IP que anotaste.
+    ```bash
+    # Reemplaza 192.168.0.102 con la IP de tu estación
+    ssh estacion@192.168.0.102
+    ```
+    A partir de ahora, todos los siguientes comandos se ejecutan en la terminal remota conectado a la estación.
+
+### 1.3. Configuración de Acceso Remoto Global (Cloudflare)
+
+Una vez dentro por SSH local, instalaremos Cloudflare Tunnel para poder acceder a la estación desde cualquier lugar (necesario para los despliegues automáticos desde GitHub Actions).
+
+1.  **Instalar `cloudflared`**:
+    ```bash
+    curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+    sudo dpkg -i cloudflared.deb
+    sudo cloudflared service install
+
+    # Ahora, ve a tu dashboard de Cloudflare Zero Trust y configura un túnel que apunte a 'ssh://localhost:22' en este dispositivo.
     ```
 
-2.  **Añadir el usuario a los grupos necesarios**:
-    ```bash
-    # Permite ejecutar comandos administrativos
-    sudo usermod -aG sudo jumaar
-    
-    # Permite a la aplicación acceder a puertos serie/USB (báscula, impresora)
-    sudo usermod -aG dialout jumaar
-    
-    # Permite ejecutar comandos de Docker sin `sudo`
-    sudo usermod -aG docker jumaar
-    ```
-    **¡Importante!** Después de estos comandos, debes **cerrar sesión y volver a iniciarla** para que los cambios de grupo tengan efecto. A partir de ahora, todos los comandos se ejecutan como el usuario `jumaar`.
+### 1.4. Permisos de Hardware y Docker
 
-### 1.3. Instalación de Dependencias Clave
+Ahora que tenemos acceso remoto, daremos al usuario `estacion` y los permisos necesarios para interactuar con el hardware y Docker.
+
+
+### 1.5. Instalación de Dependencias Clave
 
 1.  **Instalar Git y Docker**:
     ```bash
-    # Añadir el repositorio de Docker
-    sudo apt-get update
+    
+    # 2. Añadir el repositorio oficial de Docker para Ubuntu (compatible con Linux Mint)
     sudo apt-get install -y ca-certificates curl
     sudo install -m 0755 -d /etc/apt/keyrings
-    sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
     sudo chmod a+r /etc/apt/keyrings/docker.asc
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    
+    # 3. Añadir el repositorio a las fuentes de APT.
+    # Usamos $UBUNTU_CODENAME en lugar de $VERSION_CODENAME para obtener el nombre base de Ubuntu (ej. "jammy")
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$UBUNTU_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
     sudo apt-get update
     
     # Instalar Git, Docker Engine, CLI y Compose
     sudo apt-get install -y git docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     ```
 
-2.  **Instalar `cloudflared` (Túnel de Cloudflare)**:
-    Para el acceso remoto seguro desde GitHub Actions.
-    ```bash
-    curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-    sudo dpkg -i cloudflared.deb
-    sudo cloudflared service install
-    # Ahora configura tu túnel en el dashboard de Cloudflare para que apunte al puerto 22 (SSH) de localhost.
-    ```
 
-### 1.4. Instalación del Entorno Gráfico y Modo Kiosco
-
-Para que el navegador pueda ejecutarse en modo kiosco, es necesario un entorno gráfico. Instalaremos LXDE, que es extremadamente ligero.
-
-1.  **Instalar LXDE Core y un gestor de inicio de sesión**:
-    ```bash
-    sudo apt-get install -y lxde-core lightdm
-    ```
-    Durante la instalación, es posible que te pregunte qué gestor de pantalla deseas usar por defecto. Elige **`lightdm`**.
-
-2.  **Instalar Gestor de Red y Navegador**:
-    Para poder gestionar las conexiones de red (especialmente Wi-Fi) desde la interfaz gráfica y tener un navegador para el modo kiosco.
+4.  **Eliminar el Servicio de Impresión CUPS (¡Importante!)**:
+    El sistema operativo puede instalar un servicio de impresión llamado CUPS, que gestiona impresoras de forma automática. Esto entra en conflicto con nuestro script, que necesita acceso directo y exclusivo al dispositivo USB. Para evitar esta interferencia, lo eliminaremos por completo.
 
     ```bash
-    # Instalar el gestor de red
-    sudo apt-get install -y network-manager-gnome
-
-    # Descargar e instalar Google Chrome
-    curl -L -o google-chrome-stable_current_amd64.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-    sudo apt install -y ./google-chrome-stable_current_amd64.deb
-
-    # Limpiar el archivo .deb descargado
-    rm google-chrome-stable_current_amd64.deb
+    # Eliminar completamente CUPS y sus archivos de configuración
+    sudo apt-get purge -y cups
+    # Eliminar dependencias que ya no son necesarias
+    sudo apt-get autoremove -y
     ```
+    Este paso es crucial para que el script `estacion.py` pueda comunicarse directamente con la impresora sin que otro servicio "secuestre" el puerto.
 
-3.  **Asegurar el Módulo del Kernel para Impresora USB**:
-    En algunas instalaciones mínimas de Debian, el módulo del kernel para impresoras USB (`usblp`) no se carga por defecto. Esto es necesario para que el sistema cree el archivo de dispositivo `/dev/usb/lpX`.
-
-    ```bash
-    # Cargar el módulo en la sesión actual para probar de inmediato
-    sudo modprobe usblp
-    # Asegurar que el módulo se cargue en cada arranque del sistema
-    echo "usblp" | sudo tee -a /etc/modules
-    ```
-
-4.  **Deshabilitar el Servicio de Impresión CUPS (¡Importante!)**:
-    El sistema operativo intentará gestionar la impresora USB automáticamente a través de un servicio llamado CUPS. Esto entra en conflicto con nuestro script, que necesita acceso directo al dispositivo para enviar comandos de bajo nivel. Debemos deshabilitar CUPS para evitar esta interferencia.
-
-    ```bash
-    # Detener el servicio CUPS si se está ejecutando actualmente
-    sudo systemctl stop cups
-
-    # Deshabilitar CUPS para que no se inicie automáticamente en el arranque
-    sudo systemctl disable cups
-    ```
-    Este paso es crucial para que el script `estacion.py` pueda comunicarse directamente con la impresora.
-
-5.  **Configurar el Modo Kiosco (Método Manual)**:
-    El flag `--ignore-certificate-errors` de Chromium ya no es fiable. El método más seguro es importar manualmente nuestro certificado SSL local y crear una "app" para la página, que se ejecutará en modo kiosco.
-
-    a. **Inicia sesión en el escritorio de la estación** con el usuario `jumaar`.
-
-    b. **Importa el certificado en Chromium**:
-    - Abre una terminal y navega al directorio del proyecto: `cd ~/estacion-vorak`.
-    - Abre Chrome.
-    - Ve a `chrome://certificate-manager/localcerts/usercerts`.
-    - En la pestaña `Autoridades`, haz clic en `Importar`.
-    - Se abrirá un explorador de archivos. Navega a la carpeta del proyecto (`/home/jumaar/estacion-vorak`).
-    - Selecciona el archivo `localhost.pem` y haz clic en `Abrir`.
-    - Marca la casilla **"Confiar en este certificado para identificar sitios web"** y haz clic en `Aceptar`.
-
-    c. **Crea la aplicación de Kiosco**:
-    - En Chromium, navega a `https://localhost:5000`. La página debería cargar sin advertencias de seguridad.
-    - Haz clic en el menú de tres puntos de Chromium (arriba a la derecha).
-    - Selecciona `Guardar y compartir` > `Crear acceso directo...`.
-    - Dale un nombre (ej. "VORAK Estación"), marca la casilla **"Abrir como ventana"** y haz clic en `Crear`.
-
-    d. **Configura el inicio automático**:
-    - Una vez creada la aplicación, ve a la página de aplicaciones de Chromium escribiendo `chrome://apps` en la barra de direcciones.
-    - Haz clic derecho sobre la nueva aplicación ("VORAK Estación").
-    - En el menú que aparece, selecciona **"Iniciar aplicación al iniciar sesión"**.
-
-6.  **Reiniciar el sistema**:
-    ```bash
-    sudo reboot
-    ```
-    Al reiniciar, inicia sesión como `jumaar`. El escritorio aparecerá y, tras 30 segundos, el navegador se abrirá en modo kiosco.
 
 ### 1.5. Preparación para el Despliegue Automatizado
 
@@ -185,7 +139,7 @@ Para que el navegador pueda ejecutarse en modo kiosco, es necesario un entorno g
     ANCHO_DOTS_ETIQUETA=320
     ALTO_DOTS_ETIQUETA=240
 
-    GHCR_USER=jumaar
+    GHCR_USER=estacion
     GHCR_TOKEN=ghp_xxxxxxxx
     ```
 
@@ -199,7 +153,7 @@ Para que el navegador pueda ejecutarse en modo kiosco, es necesario un entorno g
     ssh-keygen -t rsa -b 4096 -C "github-actions-deploy-rsa"
     ```
     - Cuando te pregunte por la ubicación del archivo, presiona **Enter** para aceptar la ruta por defecto (`~/.ssh/id_rsa`).
-    - Cuando pida una `passphrase`, **introduce una contraseña segura**. La necesitarás para un secreto de GitHub.
+    - Cuando pida una PASSPHRASE es la `IOT_PASSPHRASE`, **introduce una contraseña segura**. La necesitarás para un secreto de GitHub.
 
     b. **En la estación**, instala la "cerradura" (la clave pública) para autorizar conexiones:
     ```bash
@@ -213,7 +167,7 @@ Para que el navegador pueda ejecutarse en modo kiosco, es necesario un entorno g
     # Este texto es extremadamente sensible.
     cat ~/.ssh/id_rsa
     
-    # 2. La CONTRASEÑA (passphrase) que elegiste en el paso 'a' va en el secreto IOT_PASSPHRASE.
+    # 2. La CONTRASEÑA (passphrase) que elegiste en el paso 'a' va en el secreto `IOT_PASSPHRASE`.
     
     # 3. Tu NOMBRE DE USUARIO en la estación va en el secreto IOT_USERNAME.
     echo $USER 
@@ -222,11 +176,12 @@ Para que el navegador pueda ejecutarse en modo kiosco, es necesario un entorno g
     d. **En tu repositorio de GitHub**, ve a `Settings > Secrets and variables > Actions` y crea/actualiza los siguientes secretos:
     - `IOT_PRIVATE_KEY`: Pega el contenido completo de tu clave privada (el resultado de `cat ~/.ssh/id_rsa`). Debe empezar con `-----BEGIN...` y terminar con `-----END...`.
     - `IOT_PASSPHRASE`: Escribe la contraseña que creaste para la clave SSH.
-    - `IOT_USERNAME`: Escribe tu nombre de usuario en la estación (ej. `jumaar`).
+    - `IOT_USERNAME`: Escribe tu nombre de usuario en la estación (ej. `estacion`).
 
 ¡Listo! En este punto, la estación está preparada para recibir despliegues automáticos. No necesitas ejecutar `deploy.sh` manualmente.
 
 ---
+
 
 ## Fase 2: Ciclo de Despliegue Automatizado (CI/CD)
 
@@ -250,3 +205,38 @@ Para desplegar una nueva versión en todas las estaciones de la flota, simplemen
   
   # 2. Empuja el tag al repositorio remoto
   git push origin v1.0.1
+
+
+
+
+
+5.  a. **Inicia sesión en el escritorio de la estación** con el usuario `estacion`.
+
+    c. **Crea la aplicación de Kiosco**:
+    - En Chromium, navega a `https://localhost:5000`. La página debería cargar sin advertencias de seguridad.
+    - Haz clic en el menú de tres puntos de Chromium (arriba a la derecha).
+    - Selecciona `Guardar y compartir` > `Crear acceso directo...`.
+    - Dale un nombre (ej. "VORAK Estación"), marca la casilla **"Abrir como ventana"** y haz clic en `Crear`.
+
+    b. **Importa el certificado en Chromium**:
+    - Abre una terminal y navega al directorio del proyecto: `cd ~/estacion-vorak`.
+    - Abre Chrome.
+    - Ve a `chrome://certificate-manager/localcerts/usercerts`.
+    - En la pestaña `Autoridades`, haz clic en `Importar`.
+    - Se abrirá un explorador de archivos. Navega a la carpeta del proyecto (`/home/estacion/estacion-vorak`).
+    - Selecciona el archivo `localhost.pem` y haz clic en `Abrir`.
+    - Marca la casilla **"Confiar en este certificado para identificar sitios web"** y haz clic en `Aceptar`.
+
+
+    d. **Configura el inicio automático**:
+    - Una vez creada la aplicación, ve a la página de aplicaciones de Chromium escribiendo `chrome://apps` en la barra de direcciones.
+    - Haz clic derecho sobre la nueva aplicación ("VORAK Estación").
+    - En el menú que aparece, selecciona **"Iniciar aplicación al iniciar sesión"**.
+
+6.  **Reiniciar el sistema**:
+    ```bash
+    sudo reboot
+    ```
+    Al reiniciar, inicia sesión como `estacion`. El escritorio aparecerá y, tras 30 segundos, el navegador se abrirá en modo kiosco.
+
+
