@@ -325,21 +325,21 @@ def manage_print_queue(state, socketio_instance):
                     IMPRESORA_PUERTO = f"/dev/usb/lp{i}"
                     app.logger.info(f"Imprimiendo en el puerto {IMPRESORA_PUERTO}")
                     break
-
-
-            printer_file = open(IMPRESORA_PUERTO, 'wb', buffering=0)
-
-
-            imprimir_etiqueta(
-                printer_file,
-                print_job['fecha_hora'],
-                print_job['fecha_vencimiento'],
-                print_job['peso'],
-                print_job['precio_total']
-            )
             
-            # Esperar a que todos los datos se envíen antes de continuar
-            printer_file.flush()
+            if not IMPRESORA_PUERTO:
+                raise FileNotFoundError("No se encontró ningún puerto de impresora /dev/usb/lpX.")
+
+            # Usar 'with' para asegurar que el archivo se cierre automáticamente
+            with open(IMPRESORA_PUERTO, 'wb', buffering=0) as printer_file:
+                imprimir_etiqueta(
+                    printer_file,
+                    print_job['fecha_hora'],
+                    print_job['fecha_vencimiento'],
+                    print_job['peso'],
+                    print_job['precio_total']
+                )
+                printer_file.flush() # Asegurar que todos los datos se envíen
+
             socketio_instance.emit('impresion_completada', {'mensaje': 'Etiqueta impresa exitosamente'})
 
         except FileNotFoundError:
@@ -350,10 +350,8 @@ def manage_print_queue(state, socketio_instance):
             socketio_instance.emit('impresion_error', {'error': 'Error interno en el proceso de impresión'})
         finally:
             # Asegurarse de que el puerto se cierre siempre, incluso si falla
-            if printer_file:
-                
             # Marcar la tarea como completada en la cola
-               print_queue.task_done()
+            print_queue.task_done()
             # Pausa de 500ms para darle un respiro al hardware de la impresora
             time.sleep(0.2) # Reducimos la pausa para USB, que es más rápido y estable
 

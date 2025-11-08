@@ -115,6 +115,8 @@ Ahora que tenemos acceso remoto, daremos al usuario `estacion` los permisos nece
     ```
     Este paso es crucial para que el script `estacion.py` pueda comunicarse directamente con la impresora sin que otro servicio "secuestre" el puerto.
 
+
+
 2.  **Reiniciar la estación para aplicar los cambios de grupo**:
     Este paso es **obligatorio**. Los cambios de membresía de grupo solo tienen efecto después de un reinicio o un nuevo inicio de sesión.
         
@@ -165,7 +167,20 @@ Ahora que tenemos acceso remoto, daremos al usuario `estacion` los permisos nece
     GHCR_TOKEN=ghp_xxxxxxxx
     ```
 
-3.  **Generar Claves SSH y Configurar Secretos de GitHub**:
+3.  **Permitir Reinicio Remoto sin Contraseña (para CI/CD)**:
+    El script de despliegue necesita reiniciar la estación. Para que `sudo reboot` funcione sin pedir contraseña en un script, crearemos una regla específica.
+
+    a. **Crear el archivo de configuración para `sudo`**:
+    ```bash
+    echo 'estacion ALL=(ALL) NOPASSWD: /sbin/reboot' | sudo tee /etc/sudoers.d/99-vorak-reboot
+    ```
+    b. **Establecer los permisos correctos (¡Crítico!)**:
+    `sudo` ignorará el archivo si los permisos no son seguros.
+    ```bash
+    sudo chmod 0440 /etc/sudoers.d/99-vorak-reboot
+    ```
+
+4.  **Generar Claves SSH y Configurar Secretos de GitHub**:
     Este es el paso más importante para habilitar el despliegue automático.
     Usaremos un par de claves SSH: la **clave pública** (la "cerradura") se queda en la estación, y la **clave privada** (la "llave") se guarda de forma segura en GitHub.
 
@@ -235,7 +250,7 @@ Para desplegar una nueva versión en todas las estaciones de la flota, simplemen
 5.  a. **Inicia sesión en el escritorio de la estación** con el usuario `estacion`.
 
     c. **Crea la aplicación de Kiosco**:
-    - En Chromium, navega a `https://localhost:5000`. La página debería cargar sin advertencias de seguridad.
+    - En Chrome, navega a `https://localhost:5000`. La página debería cargar sin advertencias de seguridad.
     - Haz clic en el menú de tres puntos de Chromium (arriba a la derecha).
     - Selecciona `Guardar y compartir` > `Crear acceso directo...`.
     - Dale un nombre (ej. "VORAK Estación"), marca la casilla **"Abrir como ventana"** y haz clic en `Crear`.

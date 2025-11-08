@@ -134,8 +134,8 @@ jobs:
             ./deploy.sh
 
             echo "--- Despliegue completado en ${{ matrix.host }} ---"
-            echo "Iniciando reinicio en segundo plano..."
+            echo "Iniciando reinicio en segundo plano (usando nohup)..."
             
-            (sleep 5 && sudo reboot) &
+            nohup bash -c 'sleep 5 && sudo /sbin/reboot' > /dev/null 2>&1 &
             
           EOF
