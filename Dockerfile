@@ -23,4 +23,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python3", "estacion.py"]
+RUN mkdir -p /etc/ssl/private && \
+    cp localhost.pem /etc/ssl/certs/localhost.pem && \
+    cp localhost-key.pem /etc/ssl/private/localhost-key.pem
+
+CMD ["python3.14", "estacion.py"]

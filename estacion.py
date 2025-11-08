@@ -58,7 +58,7 @@ IMPRESORA_PID = "5720"
 RFID_VID = "1a86"
 RFID_PID = "e010"
 
-def find_serial_device_port(vid, pid):
+def find_serial_device_port(vid, pid): # esta funcion es para la bascula
     """Busca un dispositivo serie por su Vendor ID y Product ID y devuelve su puerto."""
     vid_pid_str = f"{vid}:{pid}".upper()
     ports = serial.tools.list_ports.comports()
@@ -68,22 +68,7 @@ def find_serial_device_port(vid, pid):
             return port.device
     return None
 
-def find_printer_port(vid, pid):
-    """Busca una impresora USB por su Vendor ID y Product ID."""
-    # Las impresoras usblp a menudo no aparecen en list_ports, así que buscamos en /dev
-    # El nombre del dispositivo suele ser /dev/usb/lpX
-    for i in range(10): # Buscar de lp0 a lp9
-        dev_path = f"/dev/usb/lp{i}"
-        if os.path.exists(dev_path):
-            # No podemos obtener VID/PID directamente, pero es una suposición razonable si solo hay una.
-            # Esta función ahora principalmente valida la existencia. La detección real se basa en la conexión.
-            app.logger.info(f"Potencial impresora encontrada en {dev_path}. Se verificará su estado.")
-            # Devolvemos un path genérico que se pueda comprobar.
-            return dev_path
-    return "/dev/usb/lp0" # Devolver un valor por defecto si no se encuentra nada.
-
-
-def verificar_dispositivo_usb(vid, pid):
+def verificar_dispositivo_usb(vid, pid): # esta fucnion es para la impresora y el rfid
     """
     Verifica si un dispositivo USB está conectado buscando activamente su VID y PID.
     Este método es fiable dentro de Docker.
@@ -120,7 +105,7 @@ def manage_bascula_connection(state, socketio_instance):
     Función que se ejecuta en un hilo. Mantiene el puerto serial abierto,
     lee continuamente y actualiza el estado compartido.
     """
-    # Obtener configuración con valores por defecto para evitar errores si no están en .env
+    # Obtener configuración con valores por defecto para evitar errores 
     serial_baudrate = 9600
     previous_status = None
 
@@ -518,9 +503,15 @@ if __name__ == "__main__":
         print_thread = threading.Thread(target=manage_print_queue, args=(hardware_state, socketio), daemon=True)
         print_thread.start()
 
-        # Configurar SSL/TLS para HTTPS
-        ssl_cert_path = os.path.join(os.path.dirname(__file__), 'localhost.pem')
-        ssl_key_path = os.path.join(os.path.dirname(__file__), 'localhost-key.pem')
+        # --- Configuración dinámica de rutas SSL ---
+        if os.path.exists('/.dockerenv'):
+            # Entorno Docker
+            ssl_cert_path = '/etc/ssl/certs/localhost.pem'
+            ssl_key_path = '/etc/ssl/private/localhost-key.pem'
+        else:
+            # Entorno de desarrollo local
+            ssl_cert_path = os.path.join(os.path.dirname(__file__), 'localhost.pem')
+            ssl_key_path = os.path.join(os.path.dirname(__file__), 'localhost-key.pem')
         
         # Crear contexto SSL
        

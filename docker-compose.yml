@@ -3,7 +3,6 @@
   # =====================================================================
 services:
   estacion:
-    # Nombre del contenedor para fácil identificación.
     container_name: vorak-estacion-edge
     image: ghcr.io/jumaar/estacion-vorak/estacion:${IMAGE_TAG:-latest} # <--- Comentado para desarrollo
     # --- MODO DE DESARROLLO LOCAL ---
@@ -11,22 +10,14 @@ services:
 
     env_file:
       - ./.env
-    # Usar la red del host simplifica el acceso a dispositivos y elimina la necesidad de mapear puertos.
-    # La aplicación estará disponible directamente en el localhost de la estación.
     network_mode: "host"
 
-    volumes:
-      - "./localhost.pem:/app/localhost.pem" # Monta tu certificado
-      - "./localhost-key.pem:/app/localhost-key.pem"   # Monta tu clave privada
-      # --- VOLÚMENES PARA HOTPLUG USB ---
-      # Permiten que el contenedor vea los eventos de hardware (conexión/desconexión) en tiempo real.
+    volumes: # Permiten que el contenedor vea los eventos de hardware (conexión/desconexión) en tiempo real.
       - "/run/udev:/run/udev:ro"
-      - "/sys/bus/usb:/sys/bus/usb"
+      - "/sys:/sys:ro"
       - "/var/run/dbus:/var/run/dbus"
+      - "/dev:/dev"
 
-    devices:
-      - "/dev:/dev" 
-      # Privileged es necesario para que el contenedor tenga permisos suficientes para interactuar con el hardware a bajo nivel.
     privileged: true
 
     restart: unless-stopped
