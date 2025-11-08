@@ -38,22 +38,22 @@ Esta guía detalla los pasos para configurar una nueva estación de pesaje desde
     hostname -I
     # Anota la dirección IP que aparezca (ej. 192.168.0.102)
     ```
-1.  **Instalar el servidor SSH**:
+6.  **Instalar el servidor SSH**:
     Abre una terminal en la máquina de la estación e instala el servidor OpenSSH.
 
     ```bash
     sudo apt install openssh-server
     ```
-4.  **A el usuario `estacion` darle permisos `sudo`**:
+7.  **A el usuario `estacion` darle permisos `sudo`**:
     Aún en la terminal física de la estación, dar permisos.
 
     ```bash
     sudo usermod -aG sudo estacion
     sudo reboot
     ```
-    **¡Listo!** Ahora puedes desconectar el teclado y monitor de la estación. El resto de la configuración se hará de forma remota.
+    **¡Listo!**  El resto de la configuración se hará de forma remota.
 
-5.  **Conectarse desde el PC de Desarrollo**:
+8.  **Conectarse desde el PC de Desarrollo**:
     Desde tu propia máquina, conéctate a la estación usando la IP que anotaste.
     ```bash
     # Reemplaza 192.168.0.102 con la IP de tu estación
@@ -61,7 +61,7 @@ Esta guía detalla los pasos para configurar una nueva estación de pesaje desde
     ```
     A partir de ahora, todos los siguientes comandos se ejecutan en la terminal remota conectado a la estación.
 
-### 1.3. Configuración de Acceso Remoto Global (Cloudflare)
+### 1.2. Configuración de Acceso Remoto Global (Cloudflare)
 
 Una vez dentro por SSH local, instalaremos Cloudflare Tunnel para poder acceder a la estación desde cualquier lugar (necesario para los despliegues automáticos desde GitHub Actions).
 
@@ -75,7 +75,7 @@ Una vez dentro por SSH local, instalaremos Cloudflare Tunnel para poder acceder 
     ```
 
 
-1.  **Instalar Git y Docker**:
+2.  **Instalar Git y Docker**:
     ```bash
     
     # 2. Añadir el repositorio oficial de Docker para Ubuntu (compatible con Linux Mint)
@@ -92,7 +92,7 @@ Una vez dentro por SSH local, instalaremos Cloudflare Tunnel para poder acceder 
     # Instalar Git, Docker Engine, CLI y Compose
     sudo apt-get install -y git docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-### 1.4. Permisos de Hardware y Docker
+### 1.3. Permisos de Hardware y Docker
 
 Ahora que tenemos acceso remoto, daremos al usuario `estacion` los permisos necesarios para interactuar con el hardware (impresora, báscula) y para ejecutar comandos de Docker sin `sudo`.
 
@@ -104,7 +104,7 @@ Ahora que tenemos acceso remoto, daremos al usuario `estacion` los permisos nece
     # Permite ejecutar comandos de Docker sin `sudo` (¡CRUCIAL PARA EL DESPLIEGUE!)
     sudo usermod -aG docker estacion
     ```
-4.  **Eliminar el Servicio de Impresión CUPS (¡Importante!)**:
+2.  **Eliminar el Servicio de Impresión CUPS (¡Importante!)**:
     El sistema operativo puede instalar un servicio de impresión llamado CUPS, que gestiona impresoras de forma automática. Esto entra en conflicto con nuestro script, que necesita acceso directo y exclusivo al dispositivo USB. Para evitar esta interferencia, lo eliminaremos por completo.
 
     ```bash
@@ -115,9 +115,26 @@ Ahora que tenemos acceso remoto, daremos al usuario `estacion` los permisos nece
     ```
     Este paso es crucial para que el script `estacion.py` pueda comunicarse directamente con la impresora sin que otro servicio "secuestre" el puerto.
 
+### 1.4. Configuración de Seguridad Básica (Firewall)
 
+Antes de continuar, es fundamental asegurar la estación configurando el firewall. Esto bloqueará todos los puertos (como SSH) de la red local, permitiendo el acceso únicamente a través del túnel seguro de Cloudflare que configuraremos más adelante.
 
-2.  **Reiniciar la estación para aplicar los cambios de grupo**:
+1.  **Establecer reglas por defecto con `ufw`**:
+    `ufw` (Uncomplicated Firewall) viene con Linux Mint y es fácil de usar.
+    ```bash
+    # Denegar todas las conexiones entrantes por defecto
+    sudo ufw default deny incoming
+    # Permitir todas las conexiones salientes (necesario para el túnel y las actualizaciones)
+    sudo ufw default allow outgoing
+    ```
+
+2.  **Habilitar el firewall**:
+    ```bash
+    sudo ufw enable
+    ```
+    Cuando te pregunte si quieres continuar, escribe `y` y presiona Enter. Esto no interrumpirá tu sesión SSH local actual, pero impedirá nuevas conexiones desde la red local.
+
+3.  **Reiniciar la estación para aplicar los cambios de grupo**:
     Este paso es **obligatorio**. Los cambios de membresía de grupo solo tienen efecto después de un reinicio o un nuevo inicio de sesión.
         
     ```bash
@@ -125,7 +142,7 @@ Ahora que tenemos acceso remoto, daremos al usuario `estacion` los permisos nece
     ```
 
     
-2.  **Verificar la instalación de Docker**:
+4.  **Verificar la instalación de Docker**:
     Después del reinicio, vuelve a conectarte por SSH y ejecuta este comando **sin `sudo`**. Debería funcionar y mostrar una salida vacía o la versión de Docker, pero no un error de permisos.
     ```bash
     docker ps
@@ -244,13 +261,10 @@ Para desplegar una nueva versión en todas las estaciones de la flota, simplemen
   git push origin v1.0.1
 
 
+###  **Crea la aplicación de vorak estaciion en modo app de chrome**:
 
-
-
-5.  a. **Inicia sesión en el escritorio de la estación** con el usuario `estacion`.
-
-    c. **Crea la aplicación de Kiosco**:
-    - En Chrome, navega a `https://localhost:5000`. La página debería cargar sin advertencias de seguridad.
+    a. **Inicia sesión en el escritorio de la estación** con el usuario `estacion`.
+    - En Chrome, navega a `https://localhost:5000`. La página debería cargar sin advertencias de seguridad sino realiza paso b.
     - Haz clic en el menú de tres puntos de Chromium (arriba a la derecha).
     - Selecciona `Guardar y compartir` > `Crear acceso directo...`.
     - Dale un nombre (ej. "VORAK Estación"), marca la casilla **"Abrir como ventana"** y haz clic en `Crear`.
@@ -265,12 +279,12 @@ Para desplegar una nueva versión en todas las estaciones de la flota, simplemen
     - Marca la casilla **"Confiar en este certificado para identificar sitios web"** y haz clic en `Aceptar`.
 
 
-    d. **Configura el inicio automático**:
+    c. **Configura el inicio automático**:
     - Una vez creada la aplicación, ve a la página de aplicaciones de Chromium escribiendo `chrome://apps` en la barra de direcciones.
     - Haz clic derecho sobre la nueva aplicación ("VORAK Estación").
     - En el menú que aparece, selecciona **"Iniciar aplicación al iniciar sesión"**.
 
-6.  **Reiniciar el sistema**:
+**Reiniciar el sistema**:
     ```bash
     sudo reboot
     ```
