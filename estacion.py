@@ -49,13 +49,14 @@ print_queue = queue.Queue() # Cola para los trabajos de impresión
 # --- Configuración de dispositivos ---
 
 # IDs de hardware para la detección automática de puertos.
-# Extraídos de tus logs:
 # Báscula (CH341 Serial): idVendor=1a86, idProduct=7523
 # Impresora (GEZHI micro-printer): idVendor=0483, idProduct=5720
 BASCULA_VID = "1A86"
 BASCULA_PID = "7523"
 IMPRESORA_VID = "0483"
 IMPRESORA_PID = "5720"
+RFID_VID = "1a86"
+RFID_PID = "e010"
 
 def find_serial_device_port(vid, pid):
     """Busca un dispositivo serie por su Vendor ID y Product ID y devuelve su puerto."""
@@ -80,6 +81,20 @@ def find_printer_port(vid, pid):
             # Devolvemos un path genérico que se pueda comprobar.
             return dev_path
     return "/dev/usb/lp0" # Devolver un valor por defecto si no se encuentra nada.
+
+
+def verificar_dispositivo_usb(vid, pid):
+    """
+    Verifica si un dispositivo USB está conectado buscando activamente su VID y PID.
+    Este método es fiable dentro de Docker.
+    """
+    try:
+        vid_pid_str = f"{vid}:{pid}".lower()
+        result = subprocess.run(['lsusb'], capture_output=True, text=True, check=True)
+        return vid_pid_str in result.stdout.lower()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        app.logger.error(f"No se pudo ejecutar 'lsusb' para verificar el dispositivo {vid}:{pid}.")
+        return False
 
 
 def emit_component_status(socketio_instance, state, previous_status=None):
@@ -111,20 +126,23 @@ def manage_bascula_connection(state, socketio_instance):
 
     while True:
         serial_port = find_serial_device_port(BASCULA_VID, BASCULA_PID)
-        if not serial_port:
+        
+        # Actualizar estado de conexión basado en si se encontró el puerto
+        is_connected = serial_port is not None
+        with state["lock"]:
+            state["bascula_conectada"] = is_connected
+        
+        previous_status = emit_component_status(socketio_instance, state, previous_status)
+
+        if not is_connected:
             app.logger.warning(f"Báscula (VID:{BASCULA_VID}, PID:{BASCULA_PID}) no encontrada. Reintentando en 5 segundos...")
             time.sleep(5)
             continue
+
         try:
             # Parámetros comunes: 8 data bits, no parity, 1 stop bit (8N1)
             with serial.Serial(serial_port, serial_baudrate, timeout=1, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE) as ser:
                 app.logger.info(f"Báscula conectada en {serial_port}. Esperando datos...")
-
-                with state["lock"]:
-                    state["bascula_conectada"] = True
-
-                # Emitir estado al conectar
-                previous_status = emit_component_status(socketio_instance, state, previous_status)
 
                 # Bucle de lectura optimizado con readline()
                 while True:
@@ -134,6 +152,10 @@ def manage_bascula_connection(state, socketio_instance):
                         if not linea_bytes:
                             # Si readline() devuelve una cadena vacía, significa que el timeout (1s) se cumplió sin recibir datos.
                             # Esto es normal si la báscula no envía datos constantemente. Continuamos esperando.
+                            # También verificamos si el puerto sigue existiendo, para detectar desconexión.
+                            if not find_serial_device_port(BASCULA_VID, BASCULA_PID):
+                                app.logger.warning("La báscula parece haberse desconectado. Saliendo para reconectar.")
+                                break
                             continue
 
                         linea_str = linea_bytes.decode('utf-8').strip()
@@ -150,7 +172,6 @@ def manage_bascula_connection(state, socketio_instance):
                         app.logger.error(f"Error de puerto serial durante la lectura: {ser_err}. Saliendo para reconectar...")
                         break
         except KeyboardInterrupt:
-            # Manejar interrupción del teclado
             app.logger.info("Interrupción del teclado detectada, saliendo...")
             break
         except serial.SerialException as e:
@@ -158,29 +179,14 @@ def manage_bascula_connection(state, socketio_instance):
         except Exception as e:
             app.logger.error(f"Error general en el hilo de la báscula: {e}")
 
-        # Si llegamos aquí, hubo un error. Marcar como desconectada y esperar antes de reintentar.
+        # Si llegamos aquí, hubo un error o desconexión. Marcar como desconectada y esperar antes de reintentar.
         with state["lock"]:
             state["bascula_conectada"] = False
             state["peso"] = 0
 
-        # Emitir estado al desconectar
         previous_status = emit_component_status(socketio_instance, state, previous_status)
+        time.sleep(5)
 
-        time.sleep(5) # Esperar 5 segundos antes de reintentar
-
-
-def verificar_estado_impresora():
-    try:
-        # Para impresoras USB, la existencia del archivo del dispositivo es el mejor indicador de conexión.
-        # Buscamos dinámicamente entre lp0, lp1, etc.
-        for i in range(10):
-            if os.path.exists(f"/dev/usb/lp{i}"):
-                return True
-        return False
-    except Exception:
-        # En caso de cualquier otro error, asumir que no está conectada.
-        return False
-        
 
 def manage_impresora_connection(state, socketio_instance):
     """
@@ -192,7 +198,7 @@ def manage_impresora_connection(state, socketio_instance):
     while True:
         try:
             # Verificar estado de la impresora (la función ahora busca en varios puertos)
-            estado_actual = verificar_estado_impresora()
+            estado_actual = verificar_dispositivo_usb(IMPRESORA_VID, IMPRESORA_PID)
 
             with state["lock"]:
                 state["impresora_conectada"] = estado_actual
@@ -224,24 +230,6 @@ def manage_impresora_connection(state, socketio_instance):
         time.sleep(10)
 
 
-def check_rfid_device_connected():
-    """
-    Verifica si el dispositivo RFID/TAG (que actúa como teclado USB) está conectado.
-    Busca un dispositivo USB con el Vendor ID y Product ID específicos.
-    """
-    try:
-        # ID de Vendedor (Vendor ID) y ID de Producto (Product ID) del lector RFID
-        vendor_id = "1a86"
-        product_id = "e010"
-        
-        # Ejecuta 'lsusb' y busca el dispositivo
-        result = subprocess.run(['lsusb'], capture_output=True, text=True, check=True)
-        return f"{vendor_id}:{product_id}" in result.stdout
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        # Si 'lsusb' no existe o falla, asumimos que no está conectado
-        app.logger.error("No se pudo ejecutar 'lsusb' para verificar el lector RFID.")
-        return False
-
 def manage_rfid_connection(state, socketio_instance):
     """
     Función que se ejecuta en un hilo. Verifica periódicamente el estado
@@ -253,7 +241,7 @@ def manage_rfid_connection(state, socketio_instance):
     while True:
         try:
             # Verificar si el dispositivo RFID está conectado usando su ID de USB
-            estado_actual = check_rfid_device_connected()
+            estado_actual = verificar_dispositivo_usb(RFID_VID, RFID_PID)
 
             # Solo actualizamos el estado y emitimos si ha habido un cambio
             with state["lock"]:

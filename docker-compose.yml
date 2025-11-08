@@ -5,25 +5,28 @@ services:
   estacion:
     # Nombre del contenedor para fácil identificación.
     container_name: vorak-estacion-edge
-    # Usa la imagen del registro de contenedores de GitHub. La etiqueta se pasa desde el .env
-    image: ghcr.io/jumaar/estacion-vorak/estacion:${IMAGE_TAG:-latest}
-    # Carga las variables de entorno desde el archivo .env en la raíz del proyecto.
-    # Asegúrate de que este archivo exista y esté configurado.
+    image: ghcr.io/jumaar/estacion-vorak/estacion:${IMAGE_TAG:-latest} # <--- Comentado para desarrollo
+    # --- MODO DE DESARROLLO LOCAL ---
+    # build: .
+
     env_file:
       - ./.env
-    # El puerto del contenedor debe coincidir con el que usa la app Flask (ej. 5000).
-    ports:
-      - "${PORT}:${PORT}"
+    # Usar la red del host simplifica el acceso a dispositivos y elimina la necesidad de mapear puertos.
+    # La aplicación estará disponible directamente en el localhost de la estación.
+    network_mode: "host"
 
     volumes:
       - "./localhost.pem:/app/localhost.pem" # Monta tu certificado
       - "./localhost-key.pem:/app/localhost-key.pem"   # Monta tu clave privada
+      # --- VOLÚMENES PARA HOTPLUG USB ---
+      # Permiten que el contenedor vea los eventos de hardware (conexión/desconexión) en tiempo real.
       - "/run/udev:/run/udev:ro"
       - "/sys/bus/usb:/sys/bus/usb"
+      - "/var/run/dbus:/var/run/dbus"
 
     devices:
-      - "/dev:/dev"  # Mapear todo /dev para acceso dinámico a dispositivos
+      - "/dev:/dev" 
+      # Privileged es necesario para que el contenedor tenga permisos suficientes para interactuar con el hardware a bajo nivel.
     privileged: true
-    # Política de reinicio: siempre reinicia el contenedor si se detiene,
-    # a menos que se haya detenido manualmente.
+
     restart: unless-stopped
