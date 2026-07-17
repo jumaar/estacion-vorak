@@ -1,18 +1,15 @@
 # Archivos de entorno
-# ¡NUNCA subas este archivo a tu repositorio! Contiene secretos.
 .env
 
-# Archivos compilados de Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# Rust / Tauri
+src-tauri/target/
+target/
 
-# Entornos virtuales
-venv/
-env/
-.venv/
+# Node.js
+node_modules/
 
-# Carpetas de configuración de IDEs
+# IDEs
 .vscode/
 .idea/
+*.swp
+*~

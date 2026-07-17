@@ -1,6 +1,5 @@
 let appState = {
     socket: null, // Socket.IO instance para NestJS
-    flaskSocket: null, // Socket.IO instance para Flask
     token: null,
     estacionInfo: null, // <-- Nueva propiedad para almacenar la información de la estación
     websocket: null,
@@ -34,7 +33,7 @@ function initializeApp() {
     displayStationInfo(); // Mostrar información de la estación si está disponible
     
     // Si estamos en la página de historial, cargar los productos de la estación
-    if (window.location.pathname.includes('/historial')) {
+    if (window.location.pathname.includes('historial.html')) {
         // Cargar productos de la estación sin depender de conexiones WebSocket
         loadProductosEstacion();
         // Enfocar el input de búsqueda de EPC después de cargar
@@ -44,14 +43,12 @@ function initializeApp() {
                 epcInput.focus();
             }
         }, 500); // Dar tiempo para que se cargue la página
-    } else if (window.location.pathname.includes('/dashboard')) {
+    } else if (window.location.pathname.includes('dashboard.html')) {
 
         if (!appState.socket || !appState.socket.connected) {
             connectWebSocket();
         }
-        if (!appState.flaskSocket || !appState.flaskSocket.connected) {
-            connectFlaskWebSocket();
-        }
+        connectFlaskBackend();
     }
 }
 
@@ -122,7 +119,7 @@ function setupEventListeners() {
     // Listener global para la tecla de flecha derecha en el dashboard
     document.addEventListener('keydown', function(event) {
         // Asegurarse de que solo se active en la página del dashboard
-        if (window.location.pathname.includes('/dashboard')) {
+        if (window.location.pathname.includes('dashboard.html')) {
             // Verificar si la tecla presionada es la flecha derecha
             if (event.key === 'ArrowRight') {
                 // Prevenir cualquier acción por defecto del navegador
@@ -140,8 +137,8 @@ function setupEventListeners() {
 
 // Verificar sesión existente
 function checkExistingSession() {
-    const isProtectedPage = window.location.pathname === '/dashboard' || window.location.pathname === '/historial';
-    const isLoginPage = window.location.pathname === '/' || window.location.pathname === '/login';
+    const isProtectedPage = window.location.pathname === '/dashboard.html' || window.location.pathname === '/historial.html';
+    const isLoginPage = window.location.pathname === '/' || window.location.pathname === '/login.html';
     // Con cookies HttpOnly, no podemos verificar directamente el token desde JS.
     // Verificamos si tenemos la información de la estación en sessionStorage.
     const estacionInfo = sessionStorage.getItem('vorak_estacion_info');
@@ -199,7 +196,7 @@ async function navigateToPage(pageName) {
 
     // Si estamos en el dashboard, los sockets pueden estar activos.
     // Los desconectamos antes de navegar a otra página.
-    if (window.location.pathname.includes('/dashboard')) {
+    if (window.location.pathname.includes('dashboard.html')) {
         await disconnectWebSockets();
         // Esperar un breve momento para asegurar la desconexión
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -208,19 +205,19 @@ async function navigateToPage(pageName) {
     // Una vez desconectados, procedemos con la navegación.
     try {
         if (pageName === 'dashboard') {
-            window.location.href = '/dashboard';
+            window.location.href = 'dashboard.html';
         } else if (pageName === 'historial') {
-            window.location.href = '/historial';
+            window.location.href = 'historial.html';
         } else if (pageName === 'login') {
             // La función logout ya maneja la desconexión, pero esto es un seguro.
-            window.location.href = '/login';
+            window.location.href = 'login.html';
         } else {
             console.error(`Página desconocida: ${pageName}`);
         }
     } catch (error) {
         console.error("Error durante la navegación:", error);
         // Forzar la navegación si la desconexión falla después del timeout
-        window.location.href = `/${pageName}`;
+        window.location.href = `${pageName}.html`;
     }
 }
 
@@ -235,9 +232,7 @@ window.onloadTurnstileCallback = async function() {
 
     // Obtener la URL base del backend NestJS
     try {
-        const response = await fetch('/api/backend-config');
-        if (!response.ok) throw new Error('Respuesta de red no fue ok al obtener config de backend.');
-        const config = await response.json();
+        const config = await window.__TAURI__.invoke('get_backend_config');
         nestjsApiBaseUrl = config.nestjs_api_base_url;
         appState.nestjsApiBaseUrl = nestjsApiBaseUrl;
     } catch (error) {
@@ -246,9 +241,7 @@ window.onloadTurnstileCallback = async function() {
 
     // Obtener la Site Key de Turnstile
     try {
-        const response = await fetch('/api/config');
-        if (!response.ok) throw new Error('Respuesta de red no fue ok.');
-        const config = await response.json();
+        const config = await window.__TAURI__.invoke('get_config');
         siteKey = config.turnstile_site_key;
     } catch (error) {
         console.error('Error obteniendo Site Key del servidor, usando fallback:', error);
@@ -330,13 +323,14 @@ async function handleLogin(event) {
 
     // Obtener la URL base del backend NestJS
     if (!appState.nestjsApiBaseUrl) {
-        const configResponse = await fetch('/api/backend-config');
-        if (!configResponse.ok) {
+        try {
+            const configData = await window.__TAURI__.invoke('get_backend_config');
+            appState.nestjsApiBaseUrl = configData.nestjs_api_base_url;
+        } catch (error) {
+            console.error('Error obteniendo config:', error);
             showMessage('Error de configuración: No se pudo obtener la URL del backend', 'error');
             return;
         }
-        const configData = await configResponse.json();
-        appState.nestjsApiBaseUrl = configData.nestjs_api_base_url;
     }
 
     const clave = document.getElementById('clave').value;
@@ -442,13 +436,7 @@ async function connectWebSocket() {
 
     try {
         // Obtener la URL base del backend NestJS
-        const configResponse = await fetch('/api/backend-config');
-        if (!configResponse.ok) {
-            showMessage('No se pudo obtener la configuración del servidor', 'error');
-            return;
-        }
-
-        const configData = await configResponse.json();
+        const configData = await window.__TAURI__.invoke('get_backend_config');
         const nestjsApiBaseUrl = configData.nestjs_api_base_url;
 
         // Extraer el hostname y puerto de la URL base de NestJS
@@ -503,40 +491,30 @@ async function connectWebSocket() {
     }
 }
 
-// Conectar WebSocket a Flask para recibir datos de peso
-function connectFlaskWebSocket() {
-    // Verificar si ya hay una conexión activa
-    if (appState.flaskSocket && appState.flaskSocket.connected) {
-        console.log('Ya hay una conexión WebSocket activa con Flask');
-        return;
+// Conectar al backend local (Tauri) para datos de hardware
+let unlistenHandlers = [];
+
+async function connectFlaskBackend() {
+    // Cleanup previous listeners
+    for (const unlisten of unlistenHandlers) {
+        try { unlisten(); } catch (e) {}
+    }
+    unlistenHandlers = [];
+
+    try {
+        // Obtener estado inicial de los componentes
+        const initialStatus = await window.__TAURI__.invoke('get_component_status');
+        appState.basculaConectada = initialStatus.bascula_conectada || false;
+        appState.impresoraConectada = initialStatus.impresora_conectada || false;
+        appState.rfidConectado = initialStatus.rfid_conectado || false;
+        updateStatusIndicators();
+    } catch (e) {
+        console.error('Error obteniendo estado de componentes:', e);
     }
 
-    // Conectar al WebSocket de Flask en el mismo servidor
-    appState.flaskSocket = io('/', {
-        transports: ['websocket'],
-        withCredentials: true,
-        reconnection: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000
-    });
-
-    appState.flaskSocket.on('connect', () => {
-       
-    });
-
-    appState.flaskSocket.on('connect_error', (error) => {
-        console.error('Error en la conexión WebSocket con Flask:', error);
-    });
-
-    appState.flaskSocket.on('peso_en_gramos', (data) => {
-        // Actualizar solo el peso en el estado (mantener como valor crudo en gramos)
-        appState.pesoActual = data.peso;
-        updatePesoDisplayFromGrams(data.peso); // Actualizar display con el valor en gramos
-    });
-    
-    // Escuchar el estado de los componentes
-    appState.flaskSocket.on('component_status', (data) => {
-        // Actualizar estado de los componentes
+    // Escuchar cambios de estado de componentes
+    const unlisten1 = await window.__TAURI__.listen('component_status', (event) => {
+        const data = event.payload;
         const basculaChanged = appState.basculaConectada !== (data.bascula_conectada || false);
         const impresoraChanged = appState.impresoraConectada !== (data.impresora_conectada || false);
         const rfidChanged = appState.rfidConectado !== (data.rfid_conectado || false);
@@ -545,7 +523,6 @@ function connectFlaskWebSocket() {
         appState.impresoraConectada = data.impresora_conectada || false;
         appState.rfidConectado = data.rfid_conectado || false;
 
-        // Mostrar alertas rápidas para cambios de estado
         if (basculaChanged) {
             const status = appState.basculaConectada ? 'conectada' : 'desconectada';
             showMessage(`Báscula ${status}`, appState.basculaConectada ? 'success' : 'error');
@@ -559,24 +536,27 @@ function connectFlaskWebSocket() {
             showMessage(`RFID/TAG ${status}`, appState.rfidConectado ? 'success' : 'error');
         }
 
-        // Actualizar indicadores de estado
         updateStatusIndicators();
     });
+    unlistenHandlers.push(unlisten1);
 
-    // Escuchar eventos de estado de la impresión
-    appState.flaskSocket.on('impresion_completada', (data) => {
-        console.log('Evento de impresión completada:', data.mensaje);
-        showMessage(data.mensaje, 'success');
+    // Escuchar peso de la báscula
+    const unlisten2 = await window.__TAURI__.listen('peso_en_gramos', (event) => {
+        appState.pesoActual = event.payload.peso;
+        updatePesoDisplayFromGrams(event.payload.peso);
     });
+    unlistenHandlers.push(unlisten2);
 
-    appState.flaskSocket.on('impresion_error', (data) => {
-        console.error('Evento de error de impresión:', data.error);
-        showMessage(data.error, 'error');
+    // Escuchar eventos de impresión
+    const unlisten3 = await window.__TAURI__.listen('impresion_completada', (event) => {
+        showMessage(event.payload.mensaje || 'Etiqueta impresa exitosamente', 'success');
     });
+    unlistenHandlers.push(unlisten3);
 
-    appState.flaskSocket.on('disconnect', (reason) => {
-        
+    const unlisten4 = await window.__TAURI__.listen('impresion_error', (event) => {
+        showMessage(event.payload.error || 'Error de impresión', 'error');
     });
+    unlistenHandlers.push(unlisten4);
 }
 
 // Función para actualizar el display de peso desde gramos
@@ -771,19 +751,14 @@ async function handlePesar() {
                 clearTimeout(timeout);
                 resolve(data);
     
-                // Después de recibir la respuesta, enviar datos a Flask para impresión
+                // Después de recibir la respuesta, enviar a backend local para impresión
                 if (data.creados > 0 && data.empaques && data.empaques.length > 0) {
                     const empaque = data.empaques[0];
     
-                    // Enviar datos del empaque a Flask vía WebSocket
-                    if (appState.flaskSocket && appState.flaskSocket.connected) {
-                        appState.flaskSocket.emit('imprimir_etiqueta', {
-                            fecha_hora: new Date().toLocaleString(),
-                            fecha_vencimiento: empaque.fecha_vencimiento,
-                            precio_total: empaque.precio_venta_total,
-                            epc: empaque.epc
-                        });
-                    }
+                    window.__TAURI__.invoke('imprimir_etiqueta', {
+                        fechaVencimiento: empaque.fecha_vencimiento || 'N/A',
+                        precioTotal: empaque.precio_venta_total || 0
+                    }).catch(e => console.error('Error enviando a imprimir:', e));
                 }
             });
 
@@ -986,13 +961,17 @@ function handleReimprimir() {
         return;
     }
 
-    // Enviar los datos del último empaque guardado al servidor Flask para reimprimir
-    if (appState.flaskSocket && appState.flaskSocket.connected) {
-        showMessage('Enviando a reimprimir...', 'info');
-        appState.flaskSocket.emit('reimprimir_etiqueta', appState.ultimoEmpaque);
-    } else {
-        showMessage('No hay conexión con el servidor de impresión.', 'error');
-    }
+    // Enviar los datos del último empaque guardado al backend local para reimprimir
+    showMessage('Enviando a reimprimir...', 'info');
+    window.__TAURI__.invoke('reimprimir_etiqueta', {
+        pesoG: appState.ultimoEmpaque.peso_g,
+        fechaCreacion: appState.ultimoEmpaque.fecha_creacion,
+        fechaVencimiento: appState.ultimoEmpaque.fecha_vencimiento || 'N/A',
+        precioTotal: appState.ultimoEmpaque.precio_total || 0
+    }).catch(e => {
+        console.error('Error al reimprimir:', e);
+        showMessage('Error al enviar reimpresión: ' + e, 'error');
+    });
 }
 
 // Cargar historial de productos de la estación
@@ -1009,12 +988,7 @@ async function loadProductosEstacion() {
         const estacionId = estacion.id_estacion;
 
         // Obtener la URL base del backend NestJS
-        const configResponse = await fetch('/api/backend-config');
-        if (!configResponse.ok) {
-            showMessage('No se pudo obtener la configuración del servidor', 'error');
-            return;
-        }
-        const configData = await configResponse.json();
+        const configData = await window.__TAURI__.invoke('get_backend_config');
         const nestjsApiBaseUrl = configData.nestjs_api_base_url;
 
         // Hacer la petición HTTP para obtener los productos de la estación
@@ -1181,12 +1155,7 @@ function renderProductosTable(productos) {
             let nestjsApiBaseUrl = appState.nestjsApiBaseUrl;
             if (!nestjsApiBaseUrl) {
                 try {
-                    const configResponse = await fetch('/api/backend-config');
-                    if (!configResponse.ok) {
-                        showMessage('No se pudo obtener la configuración del servidor', 'error');
-                        return;
-                    }
-                    const configData = await configResponse.json();
+                    const configData = await window.__TAURI__.invoke('get_backend_config');
                     nestjsApiBaseUrl = configData.nestjs_api_base_url;
                     appState.nestjsApiBaseUrl = nestjsApiBaseUrl; // Guardar para uso futuro
                 } catch (error) {
@@ -1320,7 +1289,7 @@ async function logout() {
         console.warn("Error durante la desconexión de sockets en logout, redirigiendo de todas formas:", error);
     } finally {
         // Redirigir a la página de login, incluso si la desconexión falló (por timeout)
-        window.location.href = '/login';
+        window.location.href = 'login.html';
     }
 }
 
@@ -1330,39 +1299,36 @@ async function logout() {
  */
 function disconnectWebSockets() {
     return new Promise((resolve) => {
+        // Limpiar listeners de Tauri
+        for (const unlisten of unlistenHandlers) {
+            try { unlisten(); } catch (e) {}
+        }
+        unlistenHandlers = [];
+
         const socketsToDisconnect = [];
         if (appState.socket && appState.socket.connected) {
             socketsToDisconnect.push(appState.socket);
         }
-        if (appState.flaskSocket && appState.flaskSocket.connected) {
-            socketsToDisconnect.push(appState.flaskSocket);
-        }
 
         if (socketsToDisconnect.length === 0) {
-            // Destruir las referencias de todas formas para evitar reconexiones fantasma
             appState.socket = null;
-            appState.flaskSocket = null;
-            console.log("No había sockets conectados, referencias limpiadas.");
+            console.log("No había sockets NestJS conectados, referencias limpiadas.");
             resolve();
             return;
         }
 
         let disconnectedCount = 0;
         const timeout = setTimeout(() => {
-            // Forzar limpieza de referencias después de timeout
             appState.socket = null;
-            appState.flaskSocket = null;
             console.log("Timeout de desconexión, referencias limpiadas.");
             resolve();
-        }, 2000); // 2 segundos de timeout
+        }, 2000);
 
         const onDisconnect = () => {
             disconnectedCount++;
             if (disconnectedCount === socketsToDisconnect.length) {
                 clearTimeout(timeout);
-                // Destruir las referencias para evitar reconexiones fantasma
                 appState.socket = null;
-                appState.flaskSocket = null;
                 console.log("Todas las referencias de socket han sido limpiadas.");
                 resolve();
             }
@@ -1537,12 +1503,7 @@ function renderProductoConEmpaqueEspecifico(producto, empaqueEspecifico) {
             let nestjsApiBaseUrl = appState.nestjsApiBaseUrl;
             if (!nestjsApiBaseUrl) {
                 try {
-                    const configResponse = await fetch('/api/backend-config');
-                    if (!configResponse.ok) {
-                        showMessage('No se pudo obtener la configuración del servidor', 'error');
-                        return;
-                    }
-                    const configData = await configResponse.json();
+                    const configData = await window.__TAURI__.invoke('get_backend_config');
                     nestjsApiBaseUrl = configData.nestjs_api_base_url;
                     appState.nestjsApiBaseUrl = nestjsApiBaseUrl; // Guardar para uso futuro
                 } catch (error) {

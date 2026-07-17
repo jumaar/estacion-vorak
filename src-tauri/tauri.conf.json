@@ -1,0 +1,44 @@
+{
+  "productName": "vorak-estacion",
+  "version": "1.0.0",
+  "identifier": "com.vorak.estacion",
+  "build": {
+    "frontendDist": "../static",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": ""
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "VORAK - Estación de Pesaje",
+        "width": 1024,
+        "height": 768,
+        "resizable": true,
+        "center": true,
+        "url": "login.html"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.socket.io https://challenges.cloudflare.com 'unsafe-inline'; connect-src 'self' https: wss: ws:; frame-src https://challenges.cloudflare.com"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb"],
+    "icon": [
+      "icons/icon.png"
+    ],
+    "resources": [
+      "resources/config.json",
+      "resources/fonts/*",
+      "resources/99-vorak-estacion.rules",
+      "resources/vorak-estacion.service"
+    ],
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      }
+    }
+  }
+}

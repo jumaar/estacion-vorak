@@ -1,0 +1,12 @@
+{
+  "name": "vorak-estacion",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tauri dev",
+    "build:deb": "tauri build --bundles deb"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

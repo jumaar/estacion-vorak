@@ -14,48 +14,41 @@ env:
 
 jobs:
   # =================================================================================
-  # JOB 1: Construye y publica imágenes para Producción (etiquetadas con Git Tag)
+  # JOB 1: Construye .deb con Tauri
   # =================================================================================
-  build-and-push-production:
-    name: Build and Push (Production)
+  build-deb:
+    name: Build .deb (Tauri)
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      matrix:
-        service: [estacion]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/estacion-vorak/${{ matrix.service }}
-          tags: type=ref,event=tag
-      - name: Set build paths based on service
-        id: paths
+          node-version: 20
+
+      - name: Install Tauri system dependencies
         run: |
-          SERVICE_NAME=${{ matrix.service }}
-          if [ "$SERVICE_NAME" = "estacion" ]; then echo "build_context=./" >> $GITHUB_OUTPUT && echo "dockerfile_path=./Dockerfile" >> $GITHUB_OUTPUT;
-          fi
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev librsvg2-dev patchelf dpkg-dev
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build .deb
+        run: npm run build:deb
+        env:
+          CI: true
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
         with:
-          context: ${{ steps.paths.outputs.build_context }}
-          file: ${{ steps.paths.outputs.dockerfile_path }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          name: vorak-estacion-deb
+          path: src-tauri/target/release/bundle/deb/*.deb
 
   # =================================================================================
   # JOB 2: Prepara la matriz de despliegue a partir del inventario
@@ -75,11 +68,11 @@ jobs:
         run: echo "hosts=$(jq -c '.devices' .github/workflows/fleet-inventory.json)" >> $GITHUB_OUTPUT
 
   # =================================================================================
-  # JOB 3: Despliega en la flota de dispositivos IoT de forma secuencial
+  # JOB 3: Despliega en la flota de dispositivos IoT
   # =================================================================================
   deploy-to-production:
     name: Deploy to Production Fleet
-    needs: [build-and-push-production, prepare-deployment-matrix]
+    needs: [build-deb, prepare-deployment-matrix]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -89,15 +82,22 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Download .deb artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: vorak-estacion-deb
+          path: ./deb-package
+
       - name: Install Cloudflared
         run: |
           curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared.deb
+
       - name: Setup SSH and Cloudflare
         env:
           SSH_PRIVATE_KEY: ${{ secrets.IOT_PRIVATE_KEY }}
         run: |
-          # Setup SSH directory and files
           mkdir -p ~/.ssh
           echo "${{ secrets.IOT_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
@@ -113,29 +113,37 @@ jobs:
           eval $(ssh-agent -s)
           DISPLAY=:0 SSH_ASKPASS=./askpass.sh ssh-add ~/.ssh/id_rsa
 
-          # Usamos un heredoc sin comillas para permitir la expansión de variables de GitHub
+          DEB_FILE=$(ls ./deb-package/*.deb | head -1)
+
+          scp -o StrictHostKeyChecking=no "$DEB_FILE" ${{ secrets.IOT_USERNAME }}@${{ matrix.host }}:/tmp/vorak-estacion.deb
+
           ssh -o StrictHostKeyChecking=no ${{ secrets.IOT_USERNAME }}@${{ matrix.host }} << EOF
             set -e
-            echo "--- Iniciando despliegue en ${{ matrix.host }} con tag ${{ github.ref_name }} ---"
-            cd /home/${{ secrets.IOT_USERNAME }}/estacion-vorak
-            
-            echo "Actualizando código fuente a la versión del tag ${{ github.ref_name }}..."
-            git fetch --all --tags --force
-            git checkout tags/${{ github.ref_name }} -f
-            echo "✅ Código fuente actualizado."
-            
-            echo "Iniciando proceso de despliegue con script local..."
-            
-            echo "Asegurando permisos de ejecución para el script de despliegue..."
-            chmod +x deploy.sh
+            echo "--- Instalando .deb en ${{ matrix.host }} ---"
 
-            # Exportamos la variable IMAGE_TAG para que el script deploy.sh la pueda usar
-            export IMAGE_TAG=${{ github.ref_name }}
-            ./deploy.sh
+            sudo dpkg -i /tmp/vorak-estacion.deb
+
+            sudo modprobe usblp
+
+            if [ -f /opt/vorak-estacion/resources/99-vorak-estacion.rules ]; then
+              sudo cp /opt/vorak-estacion/resources/99-vorak-estacion.rules /etc/udev/rules.d/
+              sudo udevadm control --reload-rules
+              sudo udevadm trigger
+            fi
+
+            if [ -f /opt/vorak-estacion/resources/vorak-estacion.service ]; then
+              sudo cp /opt/vorak-estacion/resources/vorak-estacion.service /etc/systemd/system/
+              sudo sed -i "s/User=kiosk/User=${{ secrets.IOT_USERNAME }}/g" /etc/systemd/system/vorak-estacion.service
+              sudo sed -i "s/Group=kiosk/Group=${{ secrets.IOT_USERNAME }}/g" /etc/systemd/system/vorak-estacion.service
+              sudo systemctl daemon-reload
+              sudo systemctl enable vorak-estacion
+            fi
+
+            sudo systemctl restart vorak-estacion
+
+            rm /tmp/vorak-estacion.deb
 
             echo "--- Despliegue completado en ${{ matrix.host }} ---"
-            echo "Iniciando reinicio en segundo plano (usando nohup)..."
-            
+            echo "Iniciando reinicio en segundo plano..."
             nohup bash -c 'sleep 5 && sudo /sbin/reboot' > /dev/null 2>&1 &
-            
           EOF
