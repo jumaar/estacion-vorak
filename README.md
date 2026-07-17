@@ -1,5 +1,8 @@
 # VORAK - Módulo de Estación de Pesaje Inteligente
 
+> **Rama `rust`**: Migración a Rust + Tauri 2 (backend local nativo, .deb). Ver rama [`rust`](../../tree/rust).
+> **Rama `main`**: Versión original Python/Flask + Docker (legacy).
+
 Este repositorio contiene el software para el módulo de borde (edge) de la estación de pesaje inteligente de VORAK. La aplicación está diseñada para ejecutarse en un dispositivo dedicado (como un mini PC con Debian) conectado directamente al hardware de pesaje, impresión y lectura RFID.
 
 ## Características Principales
