@@ -7,7 +7,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-
+.kilo
 # Entornos virtuales
 venv/
 env/
