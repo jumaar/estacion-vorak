@@ -9,16 +9,7 @@
   },
   "app": {
     "withGlobalTauri": true,
-    "windows": [
-      {
-        "title": "VORAK - Estación de Pesaje",
-        "width": 1024,
-        "height": 768,
-        "resizable": true,
-        "center": true,
-        "url": "login.html"
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.socket.io https://challenges.cloudflare.com 'unsafe-inline'; connect-src 'self' https: wss: ws:; frame-src https://challenges.cloudflare.com"
     }

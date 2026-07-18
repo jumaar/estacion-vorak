@@ -13,10 +13,11 @@ impl Config {
     pub fn load(app_handle: &tauri::AppHandle) -> Self {
         let resource_path = app_handle
             .path()
-            .resolve("resources/config.json", tauri::path::BaseDirectory::Resource)
-            .unwrap_or_else(|_| {
-                PathBuf::from("resources/config.json")
-            });
+            .resolve(
+                "resources/config.json",
+                tauri::path::BaseDirectory::Resource,
+            )
+            .unwrap_or_else(|_| PathBuf::from("resources/config.json"));
 
         let mut config: Config = fs::read_to_string(&resource_path)
             .ok()

@@ -13,6 +13,31 @@ let appState = {
     rfidConectado: false
 };
 
+// Parchear window.__TAURI__ si existe pero sin invoke/listen (external URLs sin withGlobalTauri inyectado)
+if (window.__TAURI__ && window.__TAURI_INTERNALS__ && !window.__TAURI__.invoke) {
+    window.__TAURI__.invoke = function(cmd, args) {
+        return window.__TAURI_INTERNALS__.invoke(cmd, args || {});
+    };
+    window.__TAURI__.listen = function(event, handler) {
+        var cb = window.__TAURI_INTERNALS__.transformCallback(handler);
+        return window.__TAURI__.invoke('plugin:event|listen', {
+            event: event,
+            target: { kind: 'Any' },
+            handler: cb
+        }).then(function(eventId) {
+            return function() {
+                if (window.__TAURI_EVENT_PLUGIN_INTERNALS__) {
+                    window.__TAURI_EVENT_PLUGIN_INTERNALS__.unregisterListener(event, eventId);
+                }
+                return window.__TAURI__.invoke('plugin:event|unlisten', {
+                    event: event,
+                    eventId: eventId
+                });
+            };
+        });
+    };
+}
+
 // Elementos DOM principales
 const pages = {
     login: document.getElementById('login-page'),
@@ -454,16 +479,11 @@ async function connectWebSocket() {
         const configData = await window.__TAURI__.invoke('get_backend_config');
         const nestjsApiBaseUrl = configData.nestjs_api_base_url;
 
-        // Extraer el hostname y puerto de la URL base de NestJS
-        const nestjsUrl = new URL(nestjsApiBaseUrl);
-        const protocol = nestjsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${nestjsUrl.hostname}:${nestjsUrl.port || (nestjsUrl.protocol === 'https:' ? 443 : 80)}/api/frigorifico/estacion`;
-
-
-        // Conectar directamente a NestJS con credenciales (HttpOnly cookie)
-        appState.socket = io(wsUrl, {
-            transports: ['websocket'],
-            withCredentials: true  // Importante para enviar cookies HttpOnly
+        // Conectar a NestJS via Socket.IO con path personalizado
+        appState.socket = io(nestjsApiBaseUrl, {
+            path: '/api/frigorifico/estacion/ws',
+            withCredentials: true,
+            transports: ['websocket', 'polling']
         });
 
         // --- Manejadores de eventos de Socket.IO ---

@@ -33,11 +33,7 @@ pub fn spawn_bascula_reader(
     });
 }
 
-fn bascula_reader_loop(
-    state: &AppState,
-    handle: &tauri::AppHandle,
-    stop_flag: Arc<AtomicBool>,
-) {
+fn bascula_reader_loop(state: &AppState, handle: &tauri::AppHandle, stop_flag: Arc<AtomicBool>) {
     loop {
         if stop_flag.load(Ordering::Relaxed) {
             let mut hw = state.hardware.lock().unwrap();
@@ -92,10 +88,8 @@ fn bascula_reader_loop(
                                     let mut hw = state.hardware.lock().unwrap();
                                     hw.peso = peso;
                                     drop(hw);
-                                    let _ = handle.emit(
-                                        "peso_en_gramos",
-                                        serde_json::json!({"peso": peso}),
-                                    );
+                                    let _ = handle
+                                        .emit("peso_en_gramos", serde_json::json!({"peso": peso}));
                                 }
                             }
                         }

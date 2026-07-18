@@ -68,7 +68,10 @@ pub fn reimprimir_etiqueta(
     }
 
     let fecha_hora = chrono::DateTime::parse_from_rfc3339(&fecha_creacion)
-        .or_else(|_| chrono::NaiveDateTime::parse_from_str(&fecha_creacion, "%Y-%m-%dT%H:%M:%S%.fZ").map(|d| d.and_utc().into()))
+        .or_else(|_| {
+            chrono::NaiveDateTime::parse_from_str(&fecha_creacion, "%Y-%m-%dT%H:%M:%S%.fZ")
+                .map(|d| d.and_utc().into())
+        })
         .or_else(|_| {
             chrono::NaiveDate::parse_from_str(&fecha_creacion, "%Y-%m-%d")
                 .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().into())

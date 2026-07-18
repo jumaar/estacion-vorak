@@ -124,7 +124,10 @@ pub fn render_label(
     tspl.extend_from_slice(b"GAP 0, 0\n");
     tspl.extend_from_slice(b"DENSITY 15\n");
 
-    let header = format!("BITMAP {}, 0, {}, {}, 0, ", X_OFFSET, ANCHO_BYTES, ALTO_DOTS);
+    let header = format!(
+        "BITMAP {}, 0, {}, {}, 0, ",
+        X_OFFSET, ANCHO_BYTES, ALTO_DOTS
+    );
     tspl.extend_from_slice(header.as_bytes());
     tspl.extend_from_slice(&bitmap);
     tspl.extend_from_slice(b"\n");

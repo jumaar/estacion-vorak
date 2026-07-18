@@ -1,7 +1,7 @@
 use crate::bascula::spawn_bascula_reader;
 use crate::state::{AppState, ComponentStatus};
 use libc::{
-    bind, close, recvfrom, socket, sockaddr_nl, AF_NETLINK, NETLINK_KOBJECT_UEVENT, SOCK_RAW,
+    bind, close, recvfrom, sockaddr_nl, socket, AF_NETLINK, NETLINK_KOBJECT_UEVENT, SOCK_RAW,
 };
 use std::io::{self, ErrorKind};
 use std::mem::MaybeUninit;
@@ -134,8 +134,7 @@ fn uevent_loop(state: Arc<AppState>, handle: &tauri::AppHandle) -> io::Result<()
         let product_lower = product.to_lowercase();
 
         let is_printer_usb = subsystem == "usb"
-            && (product_lower.starts_with("483/5720")
-                || product_lower.starts_with("0483/5720"));
+            && (product_lower.starts_with("483/5720") || product_lower.starts_with("0483/5720"));
         let is_printer_lp = subsystem == "usbmisc" && devname.starts_with("usb/lp");
 
         let device = get_device_type(&product.to_lowercase());

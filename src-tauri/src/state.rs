@@ -33,4 +33,3 @@ pub struct AppState {
     pub print_tx: std::sync::mpsc::Sender<super::impresora::PrintJob>,
     pub bascula_stop: Mutex<Option<Arc<AtomicBool>>>,
 }
-

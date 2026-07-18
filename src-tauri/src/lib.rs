@@ -11,9 +11,25 @@ use state::{AppState, HardwareState};
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
+const LOCALHOST_PORT: u16 = 9527;
+
+fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
+    let url: tauri::Url = format!("http://localhost:{}/login.html", LOCALHOST_PORT)
+        .parse()
+        .expect("invalid localhost URL");
+    tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::External(url))
+        .title("VORAK - Estación de Pesaje")
+        .inner_size(1024.0, 768.0)
+        .resizable(true)
+        .center()
+        .build()?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_localhost::Builder::new(LOCALHOST_PORT).build())
         .setup(|app| {
             let config = Config::load(&app.handle());
             app.manage(config);
@@ -37,12 +53,9 @@ pub fn run() {
             let handle = app.handle().clone();
             devices::spawn_uevent_listener(app_state.clone(), handle.clone());
 
-            crate::impresora::spawn_print_worker(
-                app_state,
-                handle,
-                print_rx,
-                font_data,
-            );
+            crate::impresora::spawn_print_worker(app_state, handle, print_rx, font_data);
+
+            create_main_window(app)?;
 
             Ok(())
         })
