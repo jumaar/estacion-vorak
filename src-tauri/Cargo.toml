@@ -22,4 +22,9 @@ image = "0.25"
 imageproc = "0.25"
 ab_glyph = "0.2"
 chrono = { version = "0.4", features = ["clock"] }
-tauri-plugin-localhost = "2"
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.6", features = ["fs"] }
+reqwest = "0.13"
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"

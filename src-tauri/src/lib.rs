@@ -4,6 +4,7 @@ mod config;
 mod devices;
 mod impresora;
 mod label;
+mod proxy;
 mod state;
 
 use config::Config;
@@ -14,7 +15,7 @@ use tauri::Manager;
 const LOCALHOST_PORT: u16 = 9527;
 
 fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
-    let url: tauri::Url = format!("http://localhost:{}/login.html", LOCALHOST_PORT)
+    let url: tauri::Url = format!("http://localhost:{}/", LOCALHOST_PORT)
         .parse()
         .expect("invalid localhost URL");
     tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::External(url))
@@ -29,10 +30,14 @@ fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_localhost::Builder::new(LOCALHOST_PORT).build())
         .setup(|app| {
             let config = Config::load(&app.handle());
-            app.manage(config);
+            app.manage(config.clone());
+
+            // Iniciar el servidor same-origin (estáticos + proxy /api -> NestJS).
+            // Necesario para que la cookie HttpOnly sea first-party y viaje en el
+            // handshake del WebSocket (WebKitGTK bloquea cookies third-party).
+            proxy::spawn(app.handle().clone(), &config.nestjs_api_base_url);
 
             let resource_dir = app
                 .path()

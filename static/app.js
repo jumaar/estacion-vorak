@@ -2,14 +2,13 @@ let appState = {
     socket: null, // Socket.IO instance para NestJS
     estacionInfo: null, // <-- Nueva propiedad para almacenar la información de la estación
     claveVinculacion: null, // Clave de vinculación guardada de la estación
-    wsToken: null, // Token JWT para handshake WS (WebKitGTK bloquea cookies third-party)
     productos: [],
     pesoActual: 0.0,
     ultimoEmpaque: null, // Para guardar los datos del último empaque para reimpresión
     basculaConectada: false,
     impresoraConectada: false, // Se mantiene para el estado local
-    nestjsApiBaseUrl: null, // Nueva variable para la URL del backend NestJS
-    rfidConectado: false
+    rfidConectado: false,
+    currentPage: null // Página SPA activa: 'login' | 'dashboard' | 'historial'
 };
 
 // Parchear window.__TAURI__ si existe pero sin invoke/listen (external URLs sin withGlobalTauri inyectado)
@@ -50,35 +49,54 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeApp();
 });
 
-// Inicializar aplicación
+// Inicializar aplicación (SPA: todo se sirve desde index.html)
 function initializeApp() {
     setupEventListeners();
-    checkExistingSession();
-    displayStationInfo(); // Mostrar información de la estación si está disponible
-    
-    // Inicializar Turnstile si estamos en la página de login
-    if (document.getElementById('turnstile-widget')) {
+
+    const estacionInfo = sessionStorage.getItem('vorak_estacion_info');
+    if (estacionInfo) {
+        appState.estacionInfo = JSON.parse(estacionInfo);
+        showPage('dashboard');
+        onPageEnter('dashboard');
+    } else {
+        showPage('login');
         prefillClaveGuardada();
         initTurnstile();
     }
-    
-    // Si estamos en la página de historial, cargar los productos de la estación
-    if (window.location.pathname.includes('historial.html')) {
-        // Cargar productos de la estación sin depender de conexiones WebSocket
-        loadProductosEstacion();
-        // Enfocar el input de búsqueda de EPC después de cargar
-        setTimeout(() => {
-            const epcInput = document.getElementById('epc-input');
-            if (epcInput) {
-                epcInput.focus();
-            }
-        }, 500); // Dar tiempo para que se cargue la página
-    } else if (window.location.pathname.includes('dashboard.html')) {
 
+    displayStationInfo();
+}
+
+// Mostrar una página SPA (toggle de la clase .active)
+function showPage(pageName) {
+    ['login', 'dashboard', 'historial'].forEach(p => {
+        const el = document.getElementById(`${p}-page`);
+        if (el) el.classList.toggle('active', p === pageName);
+    });
+    appState.currentPage = pageName;
+}
+
+// Acciones al entrar a una página SPA
+async function onPageEnter(pageName) {
+    if (pageName === 'dashboard') {
+        displayStationInfo();
         if (!appState.socket || !appState.socket.connected) {
             connectWebSocket();
         }
         connectFlaskBackend();
+    } else if (pageName === 'historial') {
+        loadProductosEstacion();
+        setTimeout(() => {
+            const epcInput = document.getElementById('epc-input');
+            if (epcInput) epcInput.focus();
+        }, 500);
+    } else if (pageName === 'login') {
+        // Reiniciar el widget de Turnstile al volver al login
+        if (typeof turnstile !== 'undefined' && document.getElementById('turnstile-widget')) {
+            try { turnstile.reset('#turnstile-widget'); } catch (e) {}
+        }
+        const claveInput = document.getElementById('clave');
+        if (claveInput) claveInput.focus();
     }
 }
 
@@ -149,7 +167,7 @@ function setupEventListeners() {
     // Listener global para la tecla de flecha derecha en el dashboard
     document.addEventListener('keydown', function(event) {
         // Asegurarse de que solo se active en la página del dashboard
-        if (window.location.pathname.includes('dashboard.html')) {
+        if (appState.currentPage === 'dashboard') {
             // Verificar si la tecla presionada es la flecha derecha
             if (event.key === 'ArrowRight') {
                 // Prevenir cualquier acción por defecto del navegador
@@ -165,27 +183,8 @@ function setupEventListeners() {
     });
 }
 
-// Verificar sesión existente
-function checkExistingSession() {
-    const isProtectedPage = window.location.pathname === '/dashboard.html' || window.location.pathname === '/historial.html';
-    const isLoginPage = window.location.pathname === '/' || window.location.pathname === '/login.html';
-    // Con cookies HttpOnly, no podemos verificar directamente el token desde JS.
-    // Verificamos si tenemos la información de la estación en sessionStorage.
-    const estacionInfo = sessionStorage.getItem('vorak_estacion_info');
-
-    if (estacionInfo) {
-        appState.estacionInfo = JSON.parse(estacionInfo);
-        if (isLoginPage) {
-            navigateToPage('dashboard');
-        }
-    } else {
-        // Si NO hay sesión y estamos intentando acceder a una página protegida, redirigir a login
-        if (isProtectedPage) {
-            console.warn('No hay información de sesión. Redirigiendo a login.');
-            navigateToPage('login');
-        }
-    }
-}
+// (La función checkExistingSession basada en pathname se eliminó al migrar a SPA:
+// la verificación de sesión ahora vive dentro de initializeApp).
 
 // Mostrar información de la estación en el dashboard
 function displayStationInfo() {
@@ -218,37 +217,19 @@ function displayStationInfo() {
     }
 }
 
-// Navegación entre páginas
+// Navegación SPA entre páginas (sin recargar: el token HttpOnly se conserva
+// y no se pierde estado de la app).
 async function navigateToPage(pageName) {
-    if (window.location.pathname.includes(pageName)) {
-        return;
-    }
+    if (appState.currentPage === pageName) return;
 
-    // Si estamos en el dashboard, los sockets pueden estar activos.
-    // Los desconectamos antes de navegar a otra página.
-    if (window.location.pathname.includes('dashboard.html')) {
+    // Si salimos del dashboard, desconectamos los sockets limpiamente.
+    if (appState.currentPage === 'dashboard') {
         await disconnectWebSockets();
-        // Esperar un breve momento para asegurar la desconexión
         await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    // Una vez desconectados, procedemos con la navegación.
-    try {
-        if (pageName === 'dashboard') {
-            window.location.href = 'dashboard.html';
-        } else if (pageName === 'historial') {
-            window.location.href = 'historial.html';
-        } else if (pageName === 'login') {
-            // La función logout ya maneja la desconexión, pero esto es un seguro.
-            window.location.href = 'login.html';
-        } else {
-            console.error(`Página desconocida: ${pageName}`);
-        }
-    } catch (error) {
-        console.error("Error durante la navegación:", error);
-        // Forzar la navegación si la desconexión falla después del timeout
-        window.location.href = `${pageName}.html`;
-    }
+    showPage(pageName);
+    await onPageEnter(pageName);
 }
 
 // Variables para Turnstile
@@ -282,22 +263,9 @@ function maybeAutoLogin() {
 
 async function initTurnstile() {
     let siteKey;
-    let nestjsApiBaseUrl;
 
-    // Obtener la URL base del backend NestJS
-    try {
-        if (window.__TAURI__) {
-            const config = await window.__TAURI__.invoke('get_backend_config');
-            nestjsApiBaseUrl = config.nestjs_api_base_url;
-        }
-    } catch (error) {
-        console.error('Error obteniendo URL del backend NestJS:', error);
-    }
-    if (nestjsApiBaseUrl) {
-        appState.nestjsApiBaseUrl = nestjsApiBaseUrl;
-    }
-
-    // Obtener la Site Key de Turnstile
+    // Obtener la Site Key de Turnstile (la URL del backend ya no se necesita:
+    // todas las llamadas van same-origin vía el proxy /api).
     try {
         if (window.__TAURI__) {
             const config = await window.__TAURI__.invoke('get_config');
@@ -353,31 +321,8 @@ async function initTurnstile() {
 // Keep backward compat for any direct calls
 window.onloadTurnstileCallback = initTurnstile;
 
-// Función para esperar que la sesión esté establecida
-function waitForSessionEstablishment() {
-    return new Promise((resolve) => {
-        // Verificar inmediatamente si la sesión ya está disponible
-        if (sessionStorage.getItem('vorak_estacion_info')) {
-            resolve();
-            return;
-        }
-        
-        // Intentar verificar cada 50ms
-        const checkInterval = setInterval(() => {
-            if (sessionStorage.getItem('vorak_estacion_info')) {
-                clearInterval(checkInterval);
-                resolve();
-            }
-        }, 50);
-        
-        // Establecer un timeout máximo de 5 segundos para evitar bucles infinitos
-        setTimeout(() => {
-            clearInterval(checkInterval);
-            console.warn('Timeout esperando establecimiento de sesión');
-            resolve(); // Resolver de todas formas para continuar con la navegación
-        }, 5000);
-    });
-}
+// (waitForSessionEstablishment se eliminó: al migrar a SPA no hay recarga de página
+// y la cookie HttpOnly queda disponible inmediatamente tras el login.)
 
 // Manejar login
 async function handleLogin(event) {
@@ -386,18 +331,6 @@ async function handleLogin(event) {
     if (!turnstileToken) {
         showMessage('Completa la verificación de seguridad primero.', 'error');
         return;
-    }
-
-    // Obtener la URL base del backend NestJS
-    if (!appState.nestjsApiBaseUrl) {
-        try {
-            const configData = await window.__TAURI__.invoke('get_backend_config');
-            appState.nestjsApiBaseUrl = configData.nestjs_api_base_url;
-        } catch (error) {
-            console.error('Error obteniendo config:', error);
-            showMessage('Error de configuración: No se pudo obtener la URL del backend', 'error');
-            return;
-        }
     }
 
     const clave = document.getElementById('clave').value;
@@ -414,8 +347,10 @@ async function handleLogin(event) {
     }
 
     try {
-        // Enviar la petición de login directamente al backend NestJS
-        const response = await fetch(`${appState.nestjsApiBaseUrl}/frigorifico/estacion/login/${encodeURIComponent(clave)}`, {
+        // Login same-origin vía el proxy /api. La cookie HttpOnly que devuelve
+        // el backend se almacena como first-party y viaja automáticamente en el
+        // handshake del WS. JS nunca toca el token.
+        const response = await fetch(`/api/frigorifico/estacion/login/${encodeURIComponent(clave)}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -429,8 +364,8 @@ async function handleLogin(event) {
         if (response.ok) {
             const data = await response.json();
 
-            // El token JWT se almacena como HttpOnly cookie y también en memoria para el handshake WS
-            appState.wsToken = data.access_token;
+            // El token JWT viaja únicamente en cookie HttpOnly (same-origin vía proxy).
+            // JS no tiene acceso al token: el handshake WS se autentica con la cookie.
             appState.estacionInfo = data.estacion; // <-- Almacenar la información de la estación
             sessionStorage.setItem('vorak_estacion_info', JSON.stringify(data.estacion)); // <-- Guardar en sessionStorage
 
@@ -442,10 +377,7 @@ async function handleLogin(event) {
             // Mostrar información de la estación
             displayStationInfo();
 
-            // Esperar a que la sesión esté completamente establecida antes de redirigir
-            await waitForSessionEstablishment();
-            
-            // Navegar al dashboard
+            // Navegar al dashboard (SPA: sin recarga, la cookie se conserva)
             navigateToPage('dashboard');
         } else {
             // Si el backend rechaza la clave, eliminarla del estado guardado
@@ -512,19 +444,11 @@ async function connectWebSocket() {
     }
 
     try {
-        // Obtener la URL base del backend NestJS
-        const configData = await window.__TAURI__.invoke('get_backend_config');
-        const nestjsApiBaseUrl = configData.nestjs_api_base_url;
-
-        // Usar solo el origin: si la URL base incluye un path (ej. /api),
-        // Socket.IO lo interpretaría como un namespace inválido
-        const wsOrigin = new URL(nestjsApiBaseUrl).origin;
-
-        // Conectar a NestJS via Socket.IO con path personalizado
-        // auth.token como fallback para WebKitGTK que bloquea cookies third-party
-        appState.socket = io(wsOrigin, {
+        // Conexión same-origin al proxy (http://localhost:9527), que puentea el
+        // WebSocket a NestJS. La cookie HttpOnly (first-party) viaja automáticamente
+        // y autentica el handshake: no hace falta exponer el token en JS.
+        appState.socket = io({
             path: '/api/frigorifico/estacion/ws',
-            auth: { token: appState.wsToken },
             withCredentials: true,
             transports: ['websocket', 'polling']
         });
@@ -1058,12 +982,8 @@ async function loadProductosEstacion() {
         const estacion = JSON.parse(estacionInfo);
         const estacionId = estacion.id_estacion;
 
-        // Obtener la URL base del backend NestJS
-        const configData = await window.__TAURI__.invoke('get_backend_config');
-        const nestjsApiBaseUrl = configData.nestjs_api_base_url;
-
-        // Hacer la petición HTTP para obtener los productos de la estación
-        const response = await fetch(`${nestjsApiBaseUrl}/frigorifico/estacion/${estacionId}`, {
+        // Petición same-origin vía proxy /api (la cookie HttpOnly viaja sola).
+        const response = await fetch(`/api/frigorifico/estacion/${estacionId}`, {
             method: 'GET',
             credentials: 'include', // Para enviar cookies HttpOnly
             headers: {
@@ -1221,25 +1141,12 @@ function renderProductosTable(productos) {
             const estacion = JSON.parse(estacionInfo);
             const estacionId = estacion.id_estacion;
             
-            // Obtener la URL base del backend
-            let nestjsApiBaseUrl = appState.nestjsApiBaseUrl;
-            if (!nestjsApiBaseUrl) {
-                try {
-                    const configData = await window.__TAURI__.invoke('get_backend_config');
-                    nestjsApiBaseUrl = configData.nestjs_api_base_url;
-                    appState.nestjsApiBaseUrl = nestjsApiBaseUrl; // Guardar para uso futuro
-                } catch (error) {
-                    console.error('Error obteniendo URL del backend:', error);
-                    showMessage('Error obteniendo la URL del backend', 'error');
-                    return;
-                }
-            }
-            
+            // Llamar a la nueva API para eliminar el empaque por EPC (same-origin vía /api)
             const confirmacion = confirm(`¿Estás seguro de que quieres eliminar el empaque con EPC ${epc}?`);
-            
+
             if (confirmacion) {
                 // Llamar a la nueva API para eliminar el empaque por EPC
-                fetch(`${nestjsApiBaseUrl}/frigorifico/estacion/${estacionId}/empaque/${epc}`, {
+                fetch(`/api/frigorifico/estacion/${estacionId}/empaque/${epc}`, {
                     method: 'DELETE',
                     credentials: 'include' // Importante: incluye las cookies
                 })
@@ -1315,21 +1222,24 @@ async function handleSessionExpired() {
 
     showMessage('Sesión expirada. Reautenticando...', 'error');
     appState.estacionInfo = null;
-    appState.wsToken = null;
     sessionStorage.removeItem('vorak_estacion_info');
     sessionStorage.removeItem('vorak_logout');
 
     try {
         await disconnectWebSockets();
-    } finally {
-        window.location.href = 'login.html';
+    } catch (e) {
+        console.warn('Error desconectando sockets al expirar sesión:', e);
     }
+
+    // SPA: volver al login sin recargar (la cookie HttpOnly caducó y se limpia
+    // al reautenticar). Reseteamos el flag para permitir futuras reautenticaciones.
+    await navigateToPage('login');
+    reautenticacionEnCurso = false;
 }
 
 // Logout
 async function logout() {
     appState.estacionInfo = null;
-    appState.wsToken = null;
     sessionStorage.removeItem('vorak_estacion_info'); // Limpiar también la info de la estación
     // Marcar logout explícito: la clave queda guardada (prellenada) pero no se auto-inicia sesión
     sessionStorage.setItem('vorak_logout', '1');
@@ -1337,13 +1247,13 @@ async function logout() {
     try {
         // Esperar a que los WebSockets se desconecten de forma limpia
         await disconnectWebSockets();
-        console.log("Sockets desconectados. Redirigiendo a login.");
+        console.log("Sockets desconectados. Volviendo a login.");
     } catch (error) {
-        console.warn("Error durante la desconexión de sockets en logout, redirigiendo de todas formas:", error);
-    } finally {
-        // Redirigir a la página de login, incluso si la desconexión falló (por timeout)
-        window.location.href = 'login.html';
+        console.warn("Error durante la desconexión de sockets en logout:", error);
     }
+
+    // SPA: volver al login sin recargar.
+    await navigateToPage('login');
 }
 
 /**
@@ -1552,25 +1462,11 @@ function renderProductoConEmpaqueEspecifico(producto, empaqueEspecifico) {
             const estacion = JSON.parse(estacionInfo);
             const estacionId = estacion.id_estacion;
 
-            // Obtener la URL base del backend
-            let nestjsApiBaseUrl = appState.nestjsApiBaseUrl;
-            if (!nestjsApiBaseUrl) {
-                try {
-                    const configData = await window.__TAURI__.invoke('get_backend_config');
-                    nestjsApiBaseUrl = configData.nestjs_api_base_url;
-                    appState.nestjsApiBaseUrl = nestjsApiBaseUrl; // Guardar para uso futuro
-                } catch (error) {
-                    console.error('Error obteniendo URL del backend:', error);
-                    showMessage('Error obteniendo la URL del backend', 'error');
-                    return;
-                }
-            }
-
             const confirmacion = confirm(`¿Estás seguro de que quieres eliminar el empaque con EPC ${epc}?`);
 
             if (confirmacion) {
-                // Llamar a la nueva API para eliminar el empaque por EPC
-                fetch(`${nestjsApiBaseUrl}/frigorifico/estacion/${estacionId}/empaque/${epc}`, {
+                // Llamar a la nueva API para eliminar el empaque por EPC (same-origin vía /api)
+                fetch(`/api/frigorifico/estacion/${estacionId}/empaque/${epc}`, {
                     method: 'DELETE',
                     credentials: 'include' // Importante: incluye las cookies
                 })

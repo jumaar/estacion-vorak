@@ -2,10 +2,160 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="refresh" content="0; url=login.html">
-    <title>VORAK - Redirigiendo...</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VORAK - Estación de Pesaje</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <p>Redirigiendo a <a href="login.html">login</a>...</p>
+    <div id="app">
+        <!-- ===================== Página de Login ===================== -->
+        <div id="login-page" class="page active">
+            <div class="auth-container">
+                <div class="auth-card">
+                    <h1 class="auth-title">Báscula VORAK</h1>
+                    <p class="auth-subtitle">Inicia sesión para acceder al sistema</p>
+
+                    <form class="auth-form" id="loginForm">
+                        <div class="input-group">
+                            <label for="clave">Clave de Vinculación</label>
+                            <input type="password" id="clave" name="clave" required>
+                        </div>
+
+                        <!-- Widget de Turnstile -->
+                        <div class="turnstile-container">
+                            <div id="turnstile-widget"></div>
+                        </div>
+
+                        <button type="submit" class="auth-button" id="loginButton" disabled>
+                            Iniciar Sesión
+                        </button>
+                    </form>
+
+                    <div class="auth-footer">
+                        <p id="login-message"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===================== Dashboard de Pesaje ===================== -->
+        <div id="dashboard-page" class="page">
+            <div class="dashboard-container">
+                <div class="controls-section">
+                    <div class="form-group">
+                        <div class="select-input-container">
+                            <select id="producto-select" name="producto">
+                                <option value="">Cargando productos...</option>
+                            </select>
+                            <input type="text" id="producto-input" placeholder="Ingrese EPC" maxlength="24" />
+                        </div>
+                    </div>
+
+                    <div id="producto-seleccionado" class="producto-seleccionado">
+                        <span class="producto-texto">Ningún producto seleccionado</span>
+                    </div>
+
+                    <div class="peso-pesar-container">
+                        <div class="peso-display-container">
+                            <div id="peso-display" class="peso-display">00 g</div>
+                        </div>
+
+                        <div class="button-container">
+                            <button id="pesar-btn" class="btn btn-large btn-success btn-very-large">PESAR</button>
+                        </div>
+                    </div>
+                    <div class="status-indicators">
+                        <div class="status-button" id="bascula-status">
+                            <button class="status-btn status-off" disabled>Báscula</button>
+                        </div>
+                        <div class="status-button" id="impresora-status">
+                            <button class="status-btn status-off" disabled>Impresora</button>
+                        </div>
+                        <div class="status-button" id="rfid-status">
+                            <button class="status-btn status-off" disabled>TAG</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ultimo-empaque">
+                    <h3>Últimos Artículos Pesados</h3>
+                    <div id="ultimo-empaque-info">
+                        <p>No hay empaques registrados</p>
+                    </div>
+
+                    <div class="station-info" id="station-info">
+                        <div class="station-id" id="station-id">ID: Cargando...</div>
+                        <div class="frigorifico-name" id="frigorifico-name">Frigorífico: Cargando...</div>
+                        <div class="last-connection" id="last-connection">Última conexión: Cargando...</div>
+                    </div>
+                </div>
+
+                <div class="actions-section">
+                    <button id="historial-btn" class="btn btn-secondary">Ver Historial</button>
+                    <button id="logout-btn" class="btn btn-danger">Cerrar Sesión</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===================== Página de Historial ===================== -->
+        <div id="historial-page" class="page">
+            <div class="products-container">
+                <div class="products-header">
+                    <h1>Historial de Empaques</h1>
+                    <p>Lista de productos procesados</p>
+                    <button id="volver-dashboard-btn" class="btn btn-success">Volver al Dashboard</button>
+                </div>
+
+                <!-- Búsqueda de empaques por EPC -->
+                <div class="busqueda-empaque-container">
+                    <div class="busqueda-empaque-header">
+                        <div class="busqueda-input-container">
+                            <input type="text" id="epc-input" class="epc-input" maxlength="24" placeholder="Ingrese EPC (máximo 24 caracteres)">
+                            <button id="buscar-epc-btn" class="btn btn-primary">Buscar</button>
+                        </div>
+                    </div>
+                    <div class="busqueda-empaque-table-container">
+                        <table class="products-table">
+                            <tbody id="busqueda-empaque-list">
+                                <tr>
+                                    <td colspan="6">Ingrese un EPC para buscar un empaque específico</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="dashboard-summary">
+                    <div class="summary-card">
+                        <h3 class="card-title">Productos Hoy</h3>
+                        <div class="card-value" id="productos-hoy">0</div>
+                        <p class="card-description">Empaques procesados</p>
+                    </div>
+
+                    <div class="summary-card">
+                        <h3 class="card-title">Peso Total</h3>
+                        <div class="card-value" id="peso-total">0.0</div>
+                        <p class="card-description">kg procesados</p>
+                    </div>
+                </div>
+
+                <div class="products-table-container">
+                    <table class="products-table">
+                        <tbody id="historial-list">
+                            <tr>
+                                <td colspan="6">Cargando historial...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cloudflare Turnstile (página de login) -->
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js"></script>
+    <!-- Socket.IO cliente -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>
