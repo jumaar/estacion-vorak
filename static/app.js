@@ -32,6 +32,11 @@ function initializeApp() {
     checkExistingSession();
     displayStationInfo(); // Mostrar información de la estación si está disponible
     
+    // Inicializar Turnstile si estamos en la página de login
+    if (document.getElementById('turnstile-widget')) {
+        initTurnstile();
+    }
+    
     // Si estamos en la página de historial, cargar los productos de la estación
     if (window.location.pathname.includes('historial.html')) {
         // Cargar productos de la estación sin depender de conexiones WebSocket
@@ -224,27 +229,31 @@ async function navigateToPage(pageName) {
 // Variables para Turnstile
 let turnstileToken = null;
 
-// Función que se ejecuta cuando Turnstile está listo
-window.onloadTurnstileCallback = async function() {
-    
+async function initTurnstile() {
     let siteKey;
     let nestjsApiBaseUrl;
 
     // Obtener la URL base del backend NestJS
     try {
-        const config = await window.__TAURI__.invoke('get_backend_config');
-        nestjsApiBaseUrl = config.nestjs_api_base_url;
-        appState.nestjsApiBaseUrl = nestjsApiBaseUrl;
+        if (window.__TAURI__) {
+            const config = await window.__TAURI__.invoke('get_backend_config');
+            nestjsApiBaseUrl = config.nestjs_api_base_url;
+        }
     } catch (error) {
-        console.error('Error obteniendo URL del backend NestJS, el login no funcionará:', error);
+        console.error('Error obteniendo URL del backend NestJS:', error);
+    }
+    if (nestjsApiBaseUrl) {
+        appState.nestjsApiBaseUrl = nestjsApiBaseUrl;
     }
 
     // Obtener la Site Key de Turnstile
     try {
-        const config = await window.__TAURI__.invoke('get_config');
-        siteKey = config.turnstile_site_key;
+        if (window.__TAURI__) {
+            const config = await window.__TAURI__.invoke('get_config');
+            siteKey = config.turnstile_site_key;
+        }
     } catch (error) {
-        console.error('Error obteniendo Site Key del servidor, usando fallback:', error);
+        console.error('Error obteniendo Site Key:', error);
     }
 
     if (!siteKey) {
@@ -252,39 +261,45 @@ window.onloadTurnstileCallback = async function() {
         return;
     }
 
-    turnstile.render('#turnstile-widget', {
-        sitekey: siteKey,
-        callback: function(token) {
-            // Token recibido - habilitar el botón
-            turnstileToken = token;
-            const loginButton = document.getElementById('loginButton');
-            if (loginButton) {
-                loginButton.disabled = false;
-                loginButton.textContent = 'Iniciar Sesión';
+    if (typeof turnstile === 'undefined') {
+        console.error('Turnstile API no está disponible. Reintentando en 1s...');
+        setTimeout(initTurnstile, 1000);
+        return;
+    }
+
+    turnstile.ready(function() {
+        turnstile.render('#turnstile-widget', {
+            sitekey: siteKey,
+            callback: function(token) {
+                turnstileToken = token;
+                const loginButton = document.getElementById('loginButton');
+                if (loginButton) {
+                    loginButton.disabled = false;
+                    loginButton.textContent = 'Iniciar Sesión';
+                }
+            },
+            'error-callback': function() {
+                turnstileToken = null;
+                const loginButton = document.getElementById('loginButton');
+                if (loginButton) {
+                    loginButton.disabled = true;
+                }
+                showMessage('Error en la verificación de seguridad. Inténtalo de nuevo.', 'error');
+            },
+            'expired-callback': function() {
+                turnstileToken = null;
+                const loginButton = document.getElementById('loginButton');
+                if (loginButton) {
+                    loginButton.disabled = true;
+                }
+                showMessage('La verificación de seguridad ha expirado. Actualiza la página.', 'error');
             }
-        },
-        'error-callback': function() {
-            // Error en la verificación
-            turnstileToken = null;
-            const loginButton = document.getElementById('loginButton');
-            if (loginButton) {
-                loginButton.disabled = true;
-            }
-            showMessage('Error en la verificación de seguridad. Inténtalo de nuevo.', 'error');
-            console.error('Error en Turnstile');
-        },
-        'expired-callback': function() {
-            // Token expirado
-            turnstileToken = null;
-            const loginButton = document.getElementById('loginButton');
-            if (loginButton) {
-                loginButton.disabled = true;
-            }
-            showMessage('La verificación de seguridad ha expirado. Actualiza la página.', 'error');
-            console.warn('Token de Turnstile expirado');
-        }
+        });
     });
 }
+
+// Keep backward compat for any direct calls
+window.onloadTurnstileCallback = initTurnstile;
 
 // Función para esperar que la sesión esté establecida
 function waitForSessionEstablishment() {
