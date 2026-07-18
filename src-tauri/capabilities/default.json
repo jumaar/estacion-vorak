@@ -1,8 +1,17 @@
 {
+  "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capability for the main window",
   "windows": ["main"],
+  "remote": {
+    "urls": ["http://localhost:9527", "http://localhost:9527/*"]
+  },
   "permissions": [
-    "core:default"
+    "core:default",
+    "allow-get-config",
+    "allow-get-backend-config",
+    "allow-get-component-status",
+    "allow-imprimir-etiqueta",
+    "allow-reimprimir-etiqueta"
   ]
 }

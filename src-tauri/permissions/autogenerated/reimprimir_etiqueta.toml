@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-reimprimir-etiqueta"
+description = "Enables the reimprimir_etiqueta command without any pre-configured scope."
+commands.allow = ["reimprimir_etiqueta"]
+
+[[permission]]
+identifier = "deny-reimprimir-etiqueta"
+description = "Denies the reimprimir_etiqueta command without any pre-configured scope."
+commands.deny = ["reimprimir_etiqueta"]

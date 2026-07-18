@@ -1,10 +1,9 @@
 let appState = {
     socket: null, // Socket.IO instance para NestJS
-    token: null,
     estacionInfo: null, // <-- Nueva propiedad para almacenar la información de la estación
-    websocket: null,
+    claveVinculacion: null, // Clave de vinculación guardada de la estación
+    wsToken: null, // Token JWT para handshake WS (WebKitGTK bloquea cookies third-party)
     productos: [],
-    historial: [],
     pesoActual: 0.0,
     ultimoEmpaque: null, // Para guardar los datos del último empaque para reimpresión
     basculaConectada: false,
@@ -59,6 +58,7 @@ function initializeApp() {
     
     // Inicializar Turnstile si estamos en la página de login
     if (document.getElementById('turnstile-widget')) {
+        prefillClaveGuardada();
         initTurnstile();
     }
     
@@ -253,6 +253,32 @@ async function navigateToPage(pageName) {
 
 // Variables para Turnstile
 let turnstileToken = null;
+let autoLoginIntentado = false;
+
+// Rellenar el input con la clave de vinculación guardada de sesiones anteriores
+function prefillClaveGuardada() {
+    const claveInput = document.getElementById('clave');
+    if (!claveInput) return;
+
+    const savedClave = localStorage.getItem('vorak_clave_vinculacion');
+    if (savedClave) {
+        claveInput.value = savedClave;
+        appState.claveVinculacion = savedClave;
+    }
+}
+
+// Iniciar sesión automáticamente si hay clave guardada y no venimos de un logout explícito
+function maybeAutoLogin() {
+    if (autoLoginIntentado) return;
+
+    const savedClave = localStorage.getItem('vorak_clave_vinculacion');
+    const logoutExplicito = sessionStorage.getItem('vorak_logout');
+
+    if (savedClave && !logoutExplicito && turnstileToken) {
+        autoLoginIntentado = true;
+        handleLogin();
+    }
+}
 
 async function initTurnstile() {
     let siteKey;
@@ -302,6 +328,7 @@ async function initTurnstile() {
                     loginButton.disabled = false;
                     loginButton.textContent = 'Iniciar Sesión';
                 }
+                maybeAutoLogin();
             },
             'error-callback': function() {
                 turnstileToken = null;
@@ -388,7 +415,7 @@ async function handleLogin(event) {
 
     try {
         // Enviar la petición de login directamente al backend NestJS
-        const response = await fetch(`${appState.nestjsApiBaseUrl}/api/frigorifico/estacion/login/${encodeURIComponent(clave)}`, {
+        const response = await fetch(`${appState.nestjsApiBaseUrl}/frigorifico/estacion/login/${encodeURIComponent(clave)}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -402,10 +429,15 @@ async function handleLogin(event) {
         if (response.ok) {
             const data = await response.json();
 
-            // El token JWT se almacena automáticamente como HttpOnly cookie
-            // No necesitamos extraerlo explícitamente ya que el navegador lo enviará automáticamente
+            // El token JWT se almacena como HttpOnly cookie y también en memoria para el handshake WS
+            appState.wsToken = data.access_token;
             appState.estacionInfo = data.estacion; // <-- Almacenar la información de la estación
             sessionStorage.setItem('vorak_estacion_info', JSON.stringify(data.estacion)); // <-- Guardar en sessionStorage
+
+            // Guardar la clave de vinculación como estado persistente para futuros inicios de sesión
+            appState.claveVinculacion = clave;
+            localStorage.setItem('vorak_clave_vinculacion', clave);
+            sessionStorage.removeItem('vorak_logout');
 
             // Mostrar información de la estación
             displayStationInfo();
@@ -416,6 +448,11 @@ async function handleLogin(event) {
             // Navegar al dashboard
             navigateToPage('dashboard');
         } else {
+            // Si el backend rechaza la clave, eliminarla del estado guardado
+            if (response.status === 401 || response.status === 403 || response.status === 404) {
+                localStorage.removeItem('vorak_clave_vinculacion');
+                appState.claveVinculacion = null;
+            }
             const errorData = await response.json().catch(() => ({ detail: 'Error de autenticación' }));
             showMessage(errorData.detail || 'Error de autenticación', 'error');
             // Resetear Turnstile para nueva verificación
@@ -479,9 +516,15 @@ async function connectWebSocket() {
         const configData = await window.__TAURI__.invoke('get_backend_config');
         const nestjsApiBaseUrl = configData.nestjs_api_base_url;
 
+        // Usar solo el origin: si la URL base incluye un path (ej. /api),
+        // Socket.IO lo interpretaría como un namespace inválido
+        const wsOrigin = new URL(nestjsApiBaseUrl).origin;
+
         // Conectar a NestJS via Socket.IO con path personalizado
-        appState.socket = io(nestjsApiBaseUrl, {
+        // auth.token como fallback para WebKitGTK que bloquea cookies third-party
+        appState.socket = io(wsOrigin, {
             path: '/api/frigorifico/estacion/ws',
+            auth: { token: appState.wsToken },
             withCredentials: true,
             transports: ['websocket', 'polling']
         });
@@ -516,8 +559,12 @@ async function connectWebSocket() {
             }
         });
 
-        appState.socket.on('disconnect', () => {
-            console.log('Desconectado del servidor NestJS');
+        appState.socket.on('disconnect', (reason) => {
+            console.log('Desconectado del servidor NestJS:', reason);
+            // El gateway solo fuerza la desconexión cuando la autenticación falla (token ausente/expirado)
+            if (reason === 'io server disconnect') {
+                handleSessionExpired();
+            }
         });
 
     } catch (error) {
@@ -672,18 +719,7 @@ function updateStatusIndicators() {
 
 // Actualizar estadísticas del dashboard
 function updateDashboardStats() {
-    const productosHoy = document.getElementById('productos-hoy');
-    const pesoTotal = document.getElementById('peso-total');
     const estadoSistema = document.getElementById('estado-sistema');
-
-    if (productosHoy) {
-        productosHoy.textContent = appState.historial.length;
-    }
-
-    if (pesoTotal) {
-        const total = appState.historial.reduce((sum, item) => sum + item.peso_g, 0);
-        pesoTotal.textContent = total.toFixed(1);
-    }
 
     if (estadoSistema) {
         const conectado = appState.basculaConectada && appState.impresoraConectada && appState.rfidConectado;
@@ -1027,7 +1063,7 @@ async function loadProductosEstacion() {
         const nestjsApiBaseUrl = configData.nestjs_api_base_url;
 
         // Hacer la petición HTTP para obtener los productos de la estación
-        const response = await fetch(`${nestjsApiBaseUrl}/api/frigorifico/estacion/${estacionId}`, {
+        const response = await fetch(`${nestjsApiBaseUrl}/frigorifico/estacion/${estacionId}`, {
             method: 'GET',
             credentials: 'include', // Para enviar cookies HttpOnly
             headers: {
@@ -1036,8 +1072,7 @@ async function loadProductosEstacion() {
         });
 
         if (response.status === 401) {
-            showMessage('No autorizado. Por favor inicie sesión nuevamente.', 'error');
-            logout();
+            handleSessionExpired();
             return;
         }
 
@@ -1204,11 +1239,15 @@ function renderProductosTable(productos) {
             
             if (confirmacion) {
                 // Llamar a la nueva API para eliminar el empaque por EPC
-                fetch(`${nestjsApiBaseUrl}/api/frigorifico/estacion/${estacionId}/empaque/${epc}`, {
+                fetch(`${nestjsApiBaseUrl}/frigorifico/estacion/${estacionId}/empaque/${epc}`, {
                     method: 'DELETE',
                     credentials: 'include' // Importante: incluye las cookies
                 })
                 .then(response => {
+                    if (response.status === 401) {
+                        handleSessionExpired();
+                        return Promise.reject(new Error('Sesión expirada. Reautenticando...'));
+                    }
                     // Verificar si la respuesta es exitosa antes de intentar parsear JSON
                     if (!response.ok) {
                         // Si no es exitosa, crear un objeto de error con el status
@@ -1240,51 +1279,6 @@ function renderProductosTable(productos) {
     });
 }
 
-// Cargar historial
-async function loadHistorial() {
-    try {
-        const response = await fetch('/api/frigorifico/historial', {
-            headers: {
-                // 'Authorization' ya no es necesario, la cookie se envía automáticamente.
-            }
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            appState.historial = data.historial;
-            renderHistorialTable();
-        } else {
-            throw new Error('Error cargando historial');
-        }
-    } catch (error) {
-        console.error('Error cargando historial:', error);
-        showMessage('Error cargando historial', 'error');
-    }
-}
-
-// Renderizar tabla de historial
-function renderHistorialTable() {
-    const tbody = document.getElementById('historial-list');
-    if (!tbody) return;
-
-    if (appState.historial.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7">No hay empaques registrados</td></tr>';
-        return;
-    }
-
-    tbody.innerHTML = appState.historial.map(empaque => `
-        <tr>
-            <td>${empaque.id}</td>
-            <td>${empaque.producto}</td>
-            <td>${empaque.peso_g} kg</td>
-            <td>$${empaque.precio_total}</td>
-            <td>${empaque.epc}</td>
-            <td>${new Date(empaque.fecha_creacion).toLocaleDateString()}</td>
-            <td><span class="status-chip status-active">${empaque.estado}</span></td>
-        </tr>
-    `).join('');
-}
-
 // Mostrar mensajes
 function showMessage(message, type = 'info', duration = 5000) {
     let messageElement;
@@ -1311,10 +1305,34 @@ function showMessage(message, type = 'info', duration = 5000) {
     }
 }
 
+// Sesión expirada (401 en REST o desconexión WS por auth): el token HttpOnly
+// caducó (24h, sin refresh). Se limpia la sesión SIN marcar logout explícito
+// para que la página de login repita el login con la clave de vinculación guardada.
+let reautenticacionEnCurso = false;
+async function handleSessionExpired() {
+    if (reautenticacionEnCurso) return;
+    reautenticacionEnCurso = true;
+
+    showMessage('Sesión expirada. Reautenticando...', 'error');
+    appState.estacionInfo = null;
+    appState.wsToken = null;
+    sessionStorage.removeItem('vorak_estacion_info');
+    sessionStorage.removeItem('vorak_logout');
+
+    try {
+        await disconnectWebSockets();
+    } finally {
+        window.location.href = 'login.html';
+    }
+}
+
 // Logout
 async function logout() {
     appState.estacionInfo = null;
+    appState.wsToken = null;
     sessionStorage.removeItem('vorak_estacion_info'); // Limpiar también la info de la estación
+    // Marcar logout explícito: la clave queda guardada (prellenada) pero no se auto-inicia sesión
+    sessionStorage.setItem('vorak_logout', '1');
 
     try {
         // Esperar a que los WebSockets se desconecten de forma limpia
@@ -1552,11 +1570,15 @@ function renderProductoConEmpaqueEspecifico(producto, empaqueEspecifico) {
 
             if (confirmacion) {
                 // Llamar a la nueva API para eliminar el empaque por EPC
-                fetch(`${nestjsApiBaseUrl}/api/frigorifico/estacion/${estacionId}/empaque/${epc}`, {
+                fetch(`${nestjsApiBaseUrl}/frigorifico/estacion/${estacionId}/empaque/${epc}`, {
                     method: 'DELETE',
                     credentials: 'include' // Importante: incluye las cookies
                 })
                 .then(response => {
+                    if (response.status === 401) {
+                        handleSessionExpired();
+                        return Promise.reject(new Error('Sesión expirada. Reautenticando...'));
+                    }
                     // Verificar si la respuesta es exitosa antes de intentar parsear JSON
                     if (!response.ok) {
                         // Si no es exitosa, crear un objeto de error con el status

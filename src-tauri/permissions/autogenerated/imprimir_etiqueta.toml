@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-imprimir-etiqueta"
+description = "Enables the imprimir_etiqueta command without any pre-configured scope."
+commands.allow = ["imprimir_etiqueta"]
+
+[[permission]]
+identifier = "deny-imprimir-etiqueta"
+description = "Denies the imprimir_etiqueta command without any pre-configured scope."
+commands.deny = ["imprimir_etiqueta"]

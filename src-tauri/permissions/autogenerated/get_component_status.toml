@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-component-status"
+description = "Enables the get_component_status command without any pre-configured scope."
+commands.allow = ["get_component_status"]
+
+[[permission]]
+identifier = "deny-get-component-status"
+description = "Denies the get_component_status command without any pre-configured scope."
+commands.deny = ["get_component_status"]

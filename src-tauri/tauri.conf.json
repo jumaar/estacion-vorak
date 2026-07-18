@@ -1,7 +1,7 @@
 {
   "productName": "vorak-estacion",
   "version": "1.0.0",
-  "identifier": "com.vorak.estacion",
+  "identifier": "app.vorak.estacion",
   "build": {
     "frontendDist": "../static",
     "beforeDevCommand": "",

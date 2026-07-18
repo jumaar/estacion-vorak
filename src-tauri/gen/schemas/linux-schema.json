@@ -177,6 +177,66 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the get_backend_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-backend-config",
+          "markdownDescription": "Enables the get_backend_config command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_component_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-component-status",
+          "markdownDescription": "Enables the get_component_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-config",
+          "markdownDescription": "Enables the get_config command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the imprimir_etiqueta command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-imprimir-etiqueta",
+          "markdownDescription": "Enables the imprimir_etiqueta command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the reimprimir_etiqueta command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-reimprimir-etiqueta",
+          "markdownDescription": "Enables the reimprimir_etiqueta command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_backend_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-backend-config",
+          "markdownDescription": "Denies the get_backend_config command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_component_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-component-status",
+          "markdownDescription": "Denies the get_component_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-config",
+          "markdownDescription": "Denies the get_config command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the imprimir_etiqueta command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-imprimir-etiqueta",
+          "markdownDescription": "Denies the imprimir_etiqueta command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the reimprimir_etiqueta command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-reimprimir-etiqueta",
+          "markdownDescription": "Denies the reimprimir_etiqueta command without any pre-configured scope."
+        },
+        {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
           "type": "string",
           "const": "core:default",

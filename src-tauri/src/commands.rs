@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::impresora::PrintJob;
 use crate::state::AppState;
 use chrono::Local;
+use std::sync::Arc;
 use tauri::State;
 
 #[tauri::command]
@@ -19,14 +20,14 @@ pub fn get_backend_config(config: State<'_, Config>) -> Result<serde_json::Value
 }
 
 #[tauri::command]
-pub fn get_component_status(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+pub fn get_component_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
     let status = crate::devices::get_component_status(&state);
     Ok(serde_json::json!(status))
 }
 
 #[tauri::command]
 pub fn imprimir_etiqueta(
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
     fecha_vencimiento: String,
     precio_total: f64,
 ) -> Result<(), String> {
@@ -57,7 +58,7 @@ pub fn imprimir_etiqueta(
 
 #[tauri::command]
 pub fn reimprimir_etiqueta(
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
     peso_g: i32,
     fecha_creacion: String,
     fecha_vencimiento: String,
