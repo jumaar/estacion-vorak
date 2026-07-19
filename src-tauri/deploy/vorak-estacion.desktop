@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=VORAK Estación
+Comment=Estación de pesaje VORAK
+Exec=/usr/bin/vorak-estacion
+Icon=vorak-estacion
+Terminal=false
+Categories=Utility;
