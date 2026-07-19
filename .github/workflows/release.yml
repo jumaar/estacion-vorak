@@ -1,0 +1,213 @@
+# .github/workflows/release.yml
+# CI/CD pipeline para la rama rust: compila .deb, publica GitHub Release y
+# mantiene un repositorio APT firmado con GPG en GitHub Pages.
+#
+# Disparador: push de tag v*.*.* en la rama rust.
+#
+# Secrets requeridos en GitHub (Settings → Secrets → Actions):
+#   GPG_PRIVATE_KEY   clave privada GPG en formato ASCII-armored
+#   GPG_PASSPHRASE    contraseña de la clave GPG
+
+name: CI/CD - Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+    branches:
+      - rust
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PACKAGE_NAME: vorak-estacion
+  APT_DISTRIBUTION: stable
+  APT_COMPONENT: main
+  APT_ARCH: amd64
+
+jobs:
+  # ── Job 1: Compila el .deb con cargo-deb ──────────────────────────────────
+  build-deb:
+    name: Build .deb
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (rust branch)
+        uses: actions/checkout@v4
+        with:
+          ref: rust
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev \
+            librsvg2-dev patchelf dpkg-dev
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb
+
+      - name: Build release binary and package .deb
+        working-directory: src-tauri
+        run: cargo deb
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-package
+          path: src-tauri/target/debian/*.deb
+          retention-days: 7
+
+  # ── Job 2: Crea GitHub Release y adjunta el .deb ─────────────────────────
+  github-release:
+    name: Create GitHub Release
+    needs: build-deb
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download .deb artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deb-package
+          path: ./
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./*.deb
+          generate_release_notes: true
+
+  # ── Job 3: Actualiza repositorio APT en GitHub Pages ─────────────────────
+  update-apt-repo:
+    name: Update APT Repository
+    needs: build-deb
+    runs-on: ubuntu-latest
+    concurrency:
+      group: apt-repo-pages
+      cancel-in-progress: false
+    steps:
+      - name: Clone or initialize gh-pages branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REPO_URL="https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+
+          if git ls-remote --exit-code --heads origin gh-pages > /dev/null 2>&1; then
+            echo "Cloning existing gh-pages branch..."
+            git clone --depth 1 --branch gh-pages "$REPO_URL" pages-repo
+          else
+            echo "gh-pages branch not found — creating fresh repository structure..."
+            mkdir -p pages-repo/pool/main
+            mkdir -p pages-repo/dists/${APT_DISTRIBUTION}/${APT_COMPONENT}/binary-${APT_ARCH}
+            cd pages-repo
+            git init -b gh-pages
+            git config user.name 'github-actions[bot]'
+            git config user.email 'github-actions[bot]@users.noreply.github.com'
+            git remote add origin "$REPO_URL"
+            echo "# VORAK Estacion APT Repository" > README.md
+            git add README.md pool/ dists/
+            git commit -m "Initialize APT repository for ${PACKAGE_NAME}"
+          fi
+
+      - name: Download .deb artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deb-package
+          path: ./deb-incoming
+
+      - name: Import GPG private key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo "GPG key imported"
+
+      - name: Update APT repository indexes
+        working-directory: pages-repo
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          cp ../deb-incoming/*.deb pool/main/
+
+          dpkg-scanpackages --multiversion pool/ /dev/null \
+            > dists/${APT_DISTRIBUTION}/${APT_COMPONENT}/binary-${APT_ARCH}/Packages
+
+          gzip -kf dists/${APT_DISTRIBUTION}/${APT_COMPONENT}/binary-${APT_ARCH}/Packages
+
+          cd dists/${APT_DISTRIBUTION}
+
+          apt-ftparchive \
+            -o APT::FTPArchive::Release::Origin="VORAK" \
+            -o APT::FTPArchive::Release::Label="VORAK Estacion" \
+            -o APT::FTPArchive::Release::Suite="${APT_DISTRIBUTION}" \
+            -o APT::FTPArchive::Release::Codename="${APT_DISTRIBUTION}" \
+            -o APT::FTPArchive::Release::Architectures="${APT_ARCH}" \
+            -o APT::FTPArchive::Release::Components="${APT_COMPONENT}" \
+            release . > Release
+
+          GPG=(gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE")
+          "${GPG[@]}" --clearsign -o InRelease Release
+          "${GPG[@]}" -abs -o Release.gpg Release
+
+      - name: Export GPG public key
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
+            --armor --export jumaar1988@hotmail.com > pages-repo/${PACKAGE_NAME}.gpg.key
+
+      - name: Generate landing page
+        run: |
+          cat > pages-repo/index.html << 'INDEXEOF'
+          <!DOCTYPE html>
+          <html lang="es">
+          <head>
+            <meta charset="UTF-8">
+            <title>VORAK Estacion - APT Repository</title>
+            <style>
+              body { font-family: monospace; max-width: 720px; margin: 40px auto; padding: 20px; background: #111; color: #eee; }
+              a { color: #6cf; }
+              pre { background: #222; padding: 12px; border-radius: 6px; overflow-x: auto; }
+              code { background: #333; padding: 2px 6px; border-radius: 3px; }
+              h1 { border-bottom: 1px solid #333; padding-bottom: 8px; }
+            </style>
+          </head>
+          <body>
+            <h1>vorak-estacion APT Repository</h1>
+            <p>Repositorio APT firmado con GPG para la instalacion y actualizacion de <strong>VORAK Estacion</strong>.</p>
+
+            <h2>Agregar repositorio</h2>
+            <pre>curl -fsSL https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/vorak-estacion.gpg.key | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/vorak-estacion.gpg
+          echo "deb [signed-by=/etc/apt/trusted.gpg.d/vorak-estacion.gpg] https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }} stable main" | sudo tee /etc/apt/sources.list.d/vorak-estacion.list
+          sudo apt update
+          sudo apt install vorak-estacion</pre>
+
+            <h2>Actualizar</h2>
+            <pre>sudo apt update && sudo apt upgrade vorak-estacion</pre>
+
+            <p style="margin-top:30px;color:#666;font-size:0.85em;">
+              Mantenido por VORAK &mdash; <a href="https://github.com/${{ github.repository }}">GitHub</a>
+            </p>
+          </body>
+          </html>
+          INDEXEOF
+
+      - name: Deploy to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: pages-repo
+          publish_branch: gh-pages
+          keep_files: false
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          commit_message: 'apt: publish ${{ env.PACKAGE_NAME }} ${{ github.ref_name }}'

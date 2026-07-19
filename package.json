@@ -4,12 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "tauri dev",
-    "build:deb": "tauri build --bundles deb"
+    "build:deb": "tauri build --bundles deb",
+    "tag": "bash scripts/tag.sh"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.1"
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-store": "^2.4.4"
   }
 }

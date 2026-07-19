@@ -1,0 +1,25 @@
+#!/bin/bash
+set -e
+
+APP_NAME="vorak-estacion"
+INSTALL_DIR="/opt/${APP_NAME}"
+
+echo "=== ${APP_NAME} post-installation ==="
+
+id -u vorak &>/dev/null || useradd -r -s /bin/false vorak
+
+chown -R vorak:vorak "${INSTALL_DIR}"
+
+if [ -f "${INSTALL_DIR}/resources/vorak-estacion.service" ]; then
+    cp "${INSTALL_DIR}/resources/vorak-estacion.service" /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable vorak-estacion
+fi
+
+if [ -f "${INSTALL_DIR}/resources/99-vorak-estacion.rules" ]; then
+    cp "${INSTALL_DIR}/resources/99-vorak-estacion.rules" /etc/udev/rules.d/
+    udevadm control --reload-rules
+    udevadm trigger
+fi
+
+echo "=== ${APP_NAME} post-installation complete ==="

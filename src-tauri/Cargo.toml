@@ -30,3 +30,17 @@ tokio-rustls = "0.26"
 rustls = "0.23"
 webpki-roots = "0.26"
 futures-util = "0.3"
+tauri-plugin-store = "2.4.4"
+
+[package.metadata.deb]
+name = "vorak-estacion"
+maintainer = "VORAK <jumaar1988@hotmail.com>"
+section = "utils"
+priority = "optional"
+depends = "libwebkit2gtk-4.1-0, libssl3, libgtk-3-0, librsvg2-2, patchelf"
+description = "Estacion de pesaje VORAK - sistema IoT de monitoreo y control"
+assets = [
+    ["deploy/postinst", "DEBIAN/postinst", "755"],
+    ["deploy/update-app.sh", "opt/vorak-estacion/update-app.sh", "755"],
+    ["deploy/vorak-estacion-sudo", "etc/sudoers.d/vorak-estacion", "440"],
+]
