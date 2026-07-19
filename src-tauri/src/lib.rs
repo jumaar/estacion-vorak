@@ -19,7 +19,7 @@ fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
         .parse()
         .expect("invalid localhost URL");
     tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::External(url))
-        .title("VORAK - Estación de Pesaje")
+        .title("VORAK - Estacion de Pesaje")
         .inner_size(1024.0, 768.0)
         .resizable(true)
         .center()
@@ -30,13 +30,11 @@ fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
             let config = Config::load(&app.handle());
             app.manage(config.clone());
 
-            // Iniciar el servidor same-origin (estáticos + proxy /api -> NestJS).
-            // Necesario para que la cookie HttpOnly sea first-party y viaje en el
-            // handshake del WebSocket (WebKitGTK bloquea cookies third-party).
             proxy::spawn(app.handle().clone(), &config.nestjs_api_base_url);
 
             let resource_dir = app
@@ -46,11 +44,14 @@ pub fn run() {
 
             let font_data = Arc::new(crate::label::load_font(&resource_dir));
 
+            let printer_settings = config::load_or_init_printer_settings(app.handle(), &resource_dir);
+
             let (print_tx, print_rx) = std::sync::mpsc::channel();
             let app_state = Arc::new(AppState {
                 hardware: Mutex::new(HardwareState::default()),
                 print_tx,
                 bascula_stop: Mutex::new(None),
+                printer_settings: Mutex::new(printer_settings),
             });
 
             app.manage(app_state.clone());
@@ -68,8 +69,12 @@ pub fn run() {
             commands::get_config,
             commands::get_backend_config,
             commands::get_component_status,
+            commands::get_printer_settings,
+            commands::save_printer_settings,
+            commands::print_test_label,
             commands::imprimir_etiqueta,
             commands::reimprimir_etiqueta,
+            commands::update_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

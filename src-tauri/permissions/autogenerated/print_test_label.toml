@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-print-test-label"
+description = "Enables the print_test_label command without any pre-configured scope."
+commands.allow = ["print_test_label"]
+
+[[permission]]
+identifier = "deny-print-test-label"
+description = "Denies the print_test_label command without any pre-configured scope."
+commands.deny = ["print_test_label"]

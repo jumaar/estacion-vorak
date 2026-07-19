@@ -11,10 +11,8 @@ if systemctl is-active --quiet "${SERVICE}"; then
     systemctl stop "${SERVICE}"
 fi
 
-if [ -f /tmp/${APP_NAME}.deb ]; then
-    dpkg -i /tmp/${APP_NAME}.deb
-    rm -f /tmp/${APP_NAME}.deb
-fi
+apt-get update
+apt-get install --only-upgrade "${APP_NAME}" -y
 
 echo "Starting ${SERVICE}..."
 systemctl start "${SERVICE}"

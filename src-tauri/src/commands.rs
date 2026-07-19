@@ -1,14 +1,48 @@
-use crate::config::Config;
+use crate::config::{self, Config};
 use crate::impresora::PrintJob;
-use crate::state::AppState;
-use chrono::Local;
+use crate::state::{AppState, PrinterSettings};
+use chrono::{Datelike, Local, Timelike};
 use std::sync::Arc;
 use tauri::State;
+
+fn mes_abreviado(m: u32) -> &'static str {
+    match m {
+        1 => "ene",
+        2 => "feb",
+        3 => "mar",
+        4 => "abr",
+        5 => "may",
+        6 => "jun",
+        7 => "jul",
+        8 => "ago",
+        9 => "sep",
+        10 => "oct",
+        11 => "nov",
+        12 => "dic",
+        _ => "???",
+    }
+}
+
+fn format_fecha_es(d: &chrono::NaiveDate) -> String {
+    format!("{}/{}/{}", d.day(), mes_abreviado(d.month()), d.year())
+}
+
+fn format_datetime_es(dt: &chrono::NaiveDateTime) -> String {
+    format!(
+        "{}/{}/{}, {:02}:{:02}",
+        dt.day(),
+        mes_abreviado(dt.month()),
+        dt.year(),
+        dt.hour(),
+        dt.minute()
+    )
+}
 
 #[tauri::command]
 pub fn get_config(config: State<'_, Config>) -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({
-        "turnstile_site_key": config.turnstile_site_key
+        "turnstile_site_key": config.turnstile_site_key,
+        "app_version": env!("CARGO_PKG_VERSION")
     }))
 }
 
@@ -26,6 +60,57 @@ pub fn get_component_status(state: State<'_, Arc<AppState>>) -> Result<serde_jso
 }
 
 #[tauri::command]
+pub fn get_printer_settings(state: State<'_, Arc<AppState>>) -> Result<PrinterSettings, String> {
+    let settings = state.printer_settings.lock().map_err(|e| e.to_string())?;
+    Ok(settings.clone())
+}
+
+#[tauri::command]
+pub fn save_printer_settings(
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+    settings: PrinterSettings,
+) -> Result<(), String> {
+    config::save_printer_settings(&app_handle, &settings)?;
+
+    let mut current = state.printer_settings.lock().map_err(|e| e.to_string())?;
+    *current = settings;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn print_test_label(
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let peso = {
+        let hw = state.hardware.lock().map_err(|e| e.to_string())?;
+        hw.peso
+    };
+
+    let peso_test = if peso > 0 { peso } else { 500 };
+
+    let now = Local::now();
+    let fecha_hora = format_datetime_es(&now.naive_local());
+    let venc = now
+        .checked_add_signed(chrono::Duration::days(7))
+        .unwrap_or(now);
+    let fecha_vencimiento = format_fecha_es(&venc.date_naive());
+
+    let job = PrintJob {
+        fecha_hora,
+        fecha_vencimiento,
+        peso: peso_test,
+        precio_total: 99.0,
+    };
+
+    state
+        .print_tx
+        .send(job)
+        .map_err(|e| format!("Error encolando impresion de prueba: {}", e))
+}
+
+#[tauri::command]
 pub fn imprimir_etiqueta(
     state: State<'_, Arc<AppState>>,
     fecha_vencimiento: String,
@@ -37,11 +122,11 @@ pub fn imprimir_etiqueta(
     };
 
     if peso <= 0 {
-        return Err("Peso no válido en la báscula".to_string());
+        return Err("Peso no valido en la bascula".to_string());
     }
 
     let now = Local::now();
-    let fecha_hora = now.format("%d/%m/%Y, %H:%M").to_string();
+    let fecha_hora = format_datetime_es(&now.naive_local());
 
     let job = PrintJob {
         fecha_hora,
@@ -53,7 +138,7 @@ pub fn imprimir_etiqueta(
     state
         .print_tx
         .send(job)
-        .map_err(|e| format!("Error encolando impresión: {}", e))
+        .map_err(|e| format!("Error encolando impresion: {}", e))
 }
 
 #[tauri::command]
@@ -65,7 +150,7 @@ pub fn reimprimir_etiqueta(
     precio_total: f64,
 ) -> Result<(), String> {
     if peso_g <= 0 {
-        return Err("Datos de peso inválidos para reimpresión.".to_string());
+        return Err("Datos de peso invalidos para reimpresion.".to_string());
     }
 
     let fecha_hora = chrono::DateTime::parse_from_rfc3339(&fecha_creacion)
@@ -77,9 +162,9 @@ pub fn reimprimir_etiqueta(
             chrono::NaiveDate::parse_from_str(&fecha_creacion, "%Y-%m-%d")
                 .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().into())
         })
-        .map_err(|e| format!("Fecha inválida: {}", e))?;
+        .map_err(|e| format!("Fecha invalida: {}", e))?;
 
-    let fecha_hora_str = fecha_hora.format("%d/%m/%Y, %H:%M").to_string();
+    let fecha_hora_str = format_datetime_es(&fecha_hora.naive_utc());
 
     let job = PrintJob {
         fecha_hora: fecha_hora_str,
@@ -91,5 +176,21 @@ pub fn reimprimir_etiqueta(
     state
         .print_tx
         .send(job)
-        .map_err(|e| format!("Error encolando reimpresión: {}", e))
+        .map_err(|e| format!("Error encolando reimpresion: {}", e))
+}
+
+#[tauri::command]
+pub fn update_app() -> Result<String, String> {
+    let status = std::process::Command::new("pkexec")
+        .arg("bash")
+        .arg("-c")
+        .arg("apt-get update && apt-get install --only-upgrade vorak-estacion -y")
+        .status()
+        .map_err(|e| format!("Error ejecutando actualizacion: {}", e))?;
+
+    if status.success() {
+        Ok("actualizado".into())
+    } else {
+        Err("La actualizacion no se completo. Verifique la conexion.".into())
+    }
 }

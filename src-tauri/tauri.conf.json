@@ -1,6 +1,6 @@
 {
   "productName": "vorak-estacion",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "identifier": "app.vorak.estacion",
   "build": {
     "frontendDist": "../static",
@@ -22,6 +22,7 @@
     ],
     "resources": [
       "resources/config.json",
+      "resources/printer_settings.json",
       "resources/fonts/*",
       "resources/99-vorak-estacion.rules",
       "resources/vorak-estacion.service"

@@ -91,10 +91,9 @@ async function onPageEnter(pageName) {
             if (epcInput) epcInput.focus();
         }, 500);
     } else if (pageName === 'login') {
-        // Reiniciar el widget de Turnstile al volver al login
-        if (typeof turnstile !== 'undefined' && document.getElementById('turnstile-widget')) {
-            try { turnstile.reset('#turnstile-widget'); } catch (e) {}
-        }
+        autoLoginIntentado = false;
+        prefillClaveGuardada();
+        initTurnstile();
         const claveInput = document.getElementById('clave');
         if (claveInput) claveInput.focus();
     }
@@ -162,6 +161,11 @@ function setupEventListeners() {
         logoutBtn.addEventListener('click', logout);
     }
 
+    const updateNowBtn = document.getElementById('update-now-btn');
+    if (updateNowBtn) {
+        updateNowBtn.addEventListener('click', handleUpdateNow);
+    }
+
     // Listener global para la tecla de flecha derecha en el dashboard
     document.addEventListener('keydown', function(event) {
         // Asegurarse de que solo se active en la página del dashboard
@@ -226,6 +230,15 @@ async function navigateToPage(pageName) {
         await new Promise(resolve => setTimeout(resolve, 100));
     }
 
+    // Si salimos del login, destruir el widget de Turnstile para que no
+    // siga emitiendo callbacks (expired, error) ni mantenga el iframe activo.
+    if (appState.currentPage === 'login' && typeof turnstile !== 'undefined') {
+        try {
+            turnstile.remove('#turnstile-widget');
+        } catch (e) {}
+        turnstileToken = null;
+    }
+
     showPage(pageName);
     await onPageEnter(pageName);
 }
@@ -280,7 +293,9 @@ async function initTurnstile() {
 
     if (typeof turnstile === 'undefined') {
         console.error('Turnstile API no está disponible. Reintentando en 1s...');
-        setTimeout(initTurnstile, 1000);
+        if (appState.currentPage === 'login') {
+            setTimeout(initTurnstile, 1000);
+        }
         return;
     }
 
@@ -297,6 +312,7 @@ async function initTurnstile() {
                 maybeAutoLogin();
             },
             'error-callback': function() {
+                if (appState.currentPage !== 'login') return;
                 turnstileToken = null;
                 const loginButton = document.getElementById('loginButton');
                 if (loginButton) {
@@ -305,6 +321,7 @@ async function initTurnstile() {
                 showMessage('Error en la verificación de seguridad. Inténtalo de nuevo.', 'error');
             },
             'expired-callback': function() {
+                if (appState.currentPage !== 'login') return;
                 turnstileToken = null;
                 const loginButton = document.getElementById('loginButton');
                 if (loginButton) {
@@ -375,6 +392,12 @@ async function handleLogin(event) {
             // Mostrar información de la estación
             displayStationInfo();
 
+            // Verificar si hay actualizacion disponible antes de mostrar el dashboard
+            const necesitaUpdate = await checkForUpdate();
+            if (necesitaUpdate) {
+                return;
+            }
+
             // Navegar al dashboard (SPA: sin recarga, la cookie se conserva)
             navigateToPage('dashboard');
         } else {
@@ -405,6 +428,56 @@ async function handleLogin(event) {
         if (loginButton) {
             loginButton.textContent = 'Iniciar Sesión';
         }
+    }
+}
+
+async function checkForUpdate() {
+    try {
+        if (!window.__TAURI__) return false;
+
+        const config = await window.__TAURI__.invoke('get_config');
+        const currentVersion = config.app_version;
+        if (!currentVersion) return false;
+
+        const response = await fetch('https://api.github.com/repos/jumaar/estacion-vorak/releases/latest');
+        if (!response.ok) return false;
+
+        const release = await response.json();
+        const latestVersion = release.tag_name.replace(/^v/, '');
+
+        if (latestVersion !== currentVersion) {
+            document.getElementById('update-current-version').textContent = currentVersion;
+            document.getElementById('update-latest-version').textContent = latestVersion;
+            document.getElementById('update-overlay').style.display = 'flex';
+            return true;
+        }
+
+        return false;
+    } catch {
+        return false;
+    }
+}
+
+async function handleUpdateNow() {
+    const btn = document.getElementById('update-now-btn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Actualizando...';
+    }
+
+    try {
+        if (window.__TAURI__) {
+            const result = await window.__TAURI__.invoke('update_app');
+            if (result === 'actualizado') {
+                window.location.reload();
+            }
+        }
+    } catch (e) {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Actualizar Ahora';
+        }
+        showMessage('Error al actualizar: ' + e, 'error');
     }
 }
 
@@ -1485,9 +1558,283 @@ function renderProductoConEmpaqueEspecifico(producto, empaqueEspecifico) {
                 })
                 .catch(error => {
                     console.error('Error al eliminar el empaque:', error);
-                    showMessage(error.message || 'Error al eliminar el empaque. Inténtalo de nuevo.', 'error');
+                    showMessage(error.message || 'Error al eliminar el empaque. Intentalo de nuevo.', 'error');
                 });
             }
         });
     }
 }
+
+// ===================== MODAL CONFIGURACION IMPRESORA =====================
+
+const PX_PER_MM_DISPLAY = 5;
+
+let printerSettings = {
+    label_width_mm: 40,
+    label_height_mm: 30,
+    density: 15,
+    speed: 4,
+    top_margin: 15,
+    left_margin: 5,
+    x_offset: -30,
+    font_size_row_1: 20,
+    font_size_row_2: 25,
+    font_size_row_3: 20,
+    font_size_row_4: 25,
+    font_size_row_5: 36,
+    font_size_row_6: 54
+};
+
+function settingsToForm(s) {
+    document.getElementById('modal-ctrl-width').value = s.label_width_mm;
+    document.getElementById('modal-ctrl-height').value = s.label_height_mm;
+    document.getElementById('modal-density').value = s.density;
+    document.getElementById('modal-speed').value = s.speed;
+    document.getElementById('modal-top-margin').value = s.top_margin;
+    document.getElementById('modal-left-margin').value = s.left_margin;
+    document.getElementById('modal-font-1').value = s.font_size_row_1;
+    document.getElementById('modal-font-2').value = s.font_size_row_2;
+    document.getElementById('modal-font-3').value = s.font_size_row_3;
+    document.getElementById('modal-font-4').value = s.font_size_row_4;
+    document.getElementById('modal-font-5').value = s.font_size_row_5;
+    document.getElementById('modal-font-6').value = s.font_size_row_6;
+}
+
+function formToSettings() {
+    return {
+        label_width_mm: parseInt(document.getElementById('modal-ctrl-width').value) || 40,
+        label_height_mm: parseInt(document.getElementById('modal-ctrl-height').value) || 30,
+        density: parseInt(document.getElementById('modal-density').value) || 15,
+        speed: parseInt(document.getElementById('modal-speed').value) || 4,
+        top_margin: parseInt(document.getElementById('modal-top-margin').value) || 15,
+        left_margin: parseInt(document.getElementById('modal-left-margin').value) || 5,
+        x_offset: printerSettings.x_offset,
+        font_size_row_1: parseInt(document.getElementById('modal-font-1').value) || 20,
+        font_size_row_2: parseInt(document.getElementById('modal-font-2').value) || 25,
+        font_size_row_3: parseInt(document.getElementById('modal-font-3').value) || 20,
+        font_size_row_4: parseInt(document.getElementById('modal-font-4').value) || 25,
+        font_size_row_5: parseInt(document.getElementById('modal-font-5').value) || 36,
+        font_size_row_6: parseInt(document.getElementById('modal-font-6').value) || 54
+    };
+}
+
+function updateCanvasSize() {
+    var wPx = printerSettings.label_width_mm * 8;
+    var hPx = printerSettings.label_height_mm * 8;
+    var canvas = document.getElementById('modal-canvas');
+    canvas.width = wPx;
+    canvas.height = hPx;
+    canvas.style.width = (printerSettings.label_width_mm * PX_PER_MM_DISPLAY) + 'px';
+    canvas.style.height = (printerSettings.label_height_mm * PX_PER_MM_DISPLAY) + 'px';
+
+    document.getElementById('modal-px-width').textContent = wPx;
+    document.getElementById('modal-px-height').textContent = hPx;
+}
+
+function mesAbreviado(m) {
+    var meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    return meses[m] || '???';
+}
+
+function formatFechaEs(d) {
+    return d.getDate() + '/' + mesAbreviado(d.getMonth()) + '/' + d.getFullYear();
+}
+
+function formatDatetimeEs(d) {
+    return d.getDate() + '/' + mesAbreviado(d.getMonth()) + '/' + d.getFullYear() +
+           ', ' + d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+}
+
+function drawPreview() {
+    var canvas = document.getElementById('modal-canvas');
+    var ctx = canvas.getContext('2d');
+    var w = canvas.width;
+    var h = canvas.height;
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, w - 2, h - 2);
+
+    var s = printerSettings;
+    var xPos = s.left_margin;
+    var yPos = s.top_margin;
+    var lineH;
+
+    ctx.fillStyle = '#000000';
+    ctx.textBaseline = 'top';
+
+    var now = new Date();
+    var fechaHora = formatDatetimeEs(now);
+    var fechaVen = new Date(now.getTime() + 7*24*60*60*1000);
+    var fechaVenStr = formatFechaEs(fechaVen);
+
+    // Row 1: "Fecha de empaque:"
+    ctx.font = 'bold ' + s.font_size_row_1 + 'px "DejaVu Sans", "Segoe UI", sans-serif';
+    ctx.fillText('Fecha de empaque:', xPos, yPos);
+    lineH = s.font_size_row_1 + 6;
+    yPos += lineH;
+
+    // Row 2: fecha_hora
+    ctx.font = 'bold ' + s.font_size_row_2 + 'px "DejaVu Sans", "Segoe UI", sans-serif';
+    ctx.fillText(fechaHora, xPos, yPos);
+    lineH = s.font_size_row_2 + 6;
+    yPos += lineH;
+
+    // Row 3: "Vence:"
+    ctx.font = 'bold ' + s.font_size_row_3 + 'px "DejaVu Sans", "Segoe UI", sans-serif';
+    ctx.fillText('Vence:', xPos, yPos);
+    lineH = s.font_size_row_3 + 6;
+    yPos += lineH;
+
+    // Row 4: fecha_vencimiento
+    ctx.font = 'bold ' + s.font_size_row_4 + 'px "DejaVu Sans", "Segoe UI", sans-serif';
+    ctx.fillText(fechaVenStr, xPos, yPos);
+    lineH = s.font_size_row_4 + 6;
+    yPos += lineH;
+
+    // Row 5: "Peso: XXXg"
+    ctx.font = 'bold ' + s.font_size_row_5 + 'px "DejaVu Sans", "Segoe UI", sans-serif';
+    ctx.fillText('Peso: 500g', xPos, yPos);
+    lineH = s.font_size_row_5 + 8;
+    yPos += lineH;
+
+    // Row 6: "$XXX"
+    ctx.font = 'bold ' + s.font_size_row_6 + 'px "DejaVu Sans", "Segoe UI", sans-serif';
+    ctx.fillText('$99', xPos, yPos);
+}
+
+function refreshPreview() {
+    printerSettings = formToSettings();
+    updateCanvasSize();
+    drawPreview();
+}
+
+function updateModalConnStatus() {
+    var el = document.getElementById('modal-conn-status');
+    if (appState.impresoraConectada) {
+        el.textContent = 'Conectada';
+        el.className = 'modal-conn-status status-on';
+    } else {
+        el.textContent = 'Desconectada';
+        el.className = 'modal-conn-status status-off';
+    }
+}
+
+async function openPrinterModal() {
+    try {
+        if (window.__TAURI__) {
+            var settings = await window.__TAURI__.invoke('get_printer_settings');
+            printerSettings = settings;
+        }
+    } catch (e) {
+        console.error('Error loading printer settings:', e);
+    }
+
+    settingsToForm(printerSettings);
+    updateModalConnStatus();
+    updateCanvasSize();
+    drawPreview();
+    document.getElementById('printer-modal').style.display = 'flex';
+}
+
+function closePrinterModal() {
+    document.getElementById('printer-modal').style.display = 'none';
+}
+
+async function savePrinterSettings() {
+    var s = formToSettings();
+    try {
+        if (window.__TAURI__) {
+            await window.__TAURI__.invoke('save_printer_settings', { settings: s });
+            printerSettings = s;
+            showMessage('Configuracion de impresora guardada', 'success');
+        }
+    } catch (e) {
+        console.error('Error saving printer settings:', e);
+        showMessage('Error al guardar configuracion: ' + e, 'error');
+    }
+}
+
+async function testPrint() {
+    if (!appState.impresoraConectada) {
+        showMessage('Impresora no conectada. No se puede imprimir prueba.', 'error');
+        return;
+    }
+
+    try {
+        if (window.__TAURI__) {
+            showMessage('Enviando impresion de prueba...', 'info');
+            await window.__TAURI__.invoke('print_test_label');
+        }
+    } catch (e) {
+        console.error('Error test print:', e);
+        showMessage('Error en impresion de prueba: ' + e, 'error');
+    }
+}
+
+function setupStepperButtons() {
+    document.querySelectorAll('.stepper-btn').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            var inputId = this.dataset.target;
+            var input = document.getElementById(inputId);
+            if (!input) return;
+
+            var step = parseInt(this.dataset.step) || 0;
+            var min = parseInt(input.min) || 0;
+            var max = parseInt(input.max) || 100;
+            var val = parseInt(input.value);
+            if (isNaN(val)) val = min;
+            var newVal = Math.max(min, Math.min(max, val + step));
+            if (newVal !== val) {
+                input.value = newVal;
+                if (inputId.startsWith('modal-')) {
+                    refreshPreview();
+                }
+            }
+        });
+    });
+}
+
+// Modal event listeners - called when modal opens
+document.getElementById('impresora-status').addEventListener('click', function() {
+    openPrinterModal();
+    setTimeout(setupStepperButtons, 100);
+});
+
+document.getElementById('modal-close-btn').addEventListener('click', closePrinterModal);
+document.getElementById('modal-cancel-btn').addEventListener('click', closePrinterModal);
+
+document.getElementById('modal-save-btn').addEventListener('click', async function() {
+    await savePrinterSettings();
+    closePrinterModal();
+});
+
+document.getElementById('modal-test-print-btn').addEventListener('click', async function() {
+    var s = formToSettings();
+    try {
+        if (window.__TAURI__) {
+            await window.__TAURI__.invoke('save_printer_settings', { settings: s });
+            printerSettings = s;
+        }
+    } catch (e) {
+        console.error('Error saving before test print:', e);
+    }
+    await testPrint();
+});
+
+// Prevent modal close when clicking inside card
+document.querySelector('.modal-card').addEventListener('click', function(e) {
+    e.stopPropagation();
+});
+
+// Close modal when clicking overlay background
+document.getElementById('printer-modal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closePrinterModal();
+    }
+});

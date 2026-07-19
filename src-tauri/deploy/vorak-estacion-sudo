@@ -1,1 +1,1 @@
-%vorak ALL=(ALL) NOPASSWD: /bin/systemctl restart vorak-estacion, /bin/systemctl stop vorak-estacion, /bin/systemctl start vorak-estacion, /usr/bin/dpkg -i /tmp/vorak-estacion.deb, /sbin/reboot
+%vorak ALL=(ALL) NOPASSWD: /bin/systemctl restart vorak-estacion, /bin/systemctl stop vorak-estacion, /bin/systemctl start vorak-estacion, /usr/bin/dpkg -i /tmp/vorak-estacion.deb, /sbin/reboot, /usr/bin/apt-get update, /usr/bin/apt-get install --only-upgrade vorak-estacion -y

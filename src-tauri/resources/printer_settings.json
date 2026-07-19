@@ -1,0 +1,15 @@
+{
+  "label_width_mm": 40,
+  "label_height_mm": 30,
+  "density": 15,
+  "speed": 4,
+  "top_margin": 15,
+  "left_margin": 5,
+  "x_offset": -30,
+  "font_size_row_1": 20,
+  "font_size_row_2": 25,
+  "font_size_row_3": 20,
+  "font_size_row_4": 25,
+  "font_size_row_5": 36,
+  "font_size_row_6": 54
+}

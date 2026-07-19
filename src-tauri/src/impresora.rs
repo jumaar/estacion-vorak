@@ -50,11 +50,13 @@ fn print_worker_loop(
             }
         }
 
+        let settings = state.printer_settings.lock().unwrap().clone();
+
         let printer_path = find_printer_device();
         if printer_path.is_none() {
             let _ = handle.emit(
                 "impresion_error",
-                serde_json::json!({"error": "Dispositivo de impresión no encontrado"}),
+                serde_json::json!({"error": "Dispositivo de impresion no encontrado"}),
             );
             continue;
         }
@@ -66,6 +68,7 @@ fn print_worker_loop(
             job.peso,
             job.precio_total,
             font_data,
+            &settings,
         );
 
         match File::create(&printer_path) {

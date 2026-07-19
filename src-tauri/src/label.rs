@@ -1,27 +1,18 @@
+use crate::state::PrinterSettings;
 use ab_glyph::{FontRef, PxScale};
 use image::{GrayImage, Luma};
 use imageproc::drawing::draw_text_mut;
 use std::path::Path;
 
-const ANCHO_DOTS: u32 = 320;
-const ALTO_DOTS: u32 = 240;
-const ANCHO_BYTES: u32 = ANCHO_DOTS / 8;
-
-const TAMANO_NORMAL: f32 = 36.0;
-const TAMANO_GRANDE: f32 = 54.0;
-const TAMANO_PEQUENO: f32 = 20.0;
-const TAMANO_MEDIO: f32 = 25.0;
-const TAMANO_GRANDE_VENC: f32 = 25.0;
-
-const X_POS: i32 = 5;
-const X_OFFSET: i32 = -30;
+const DOTS_PER_MM: u32 = 8;
 
 struct FontSizes {
-    normal: PxScale,
-    grande: PxScale,
-    pequeno: PxScale,
-    medio: PxScale,
-    grande_venc: PxScale,
+    row_1: PxScale,
+    row_2: PxScale,
+    row_3: PxScale,
+    row_4: PxScale,
+    row_5: PxScale,
+    row_6: PxScale,
 }
 
 pub fn render_label(
@@ -30,103 +21,118 @@ pub fn render_label(
     peso_g: i32,
     precio_total: f64,
     font_data: &[u8],
+    settings: &PrinterSettings,
 ) -> Vec<u8> {
     let font = FontRef::try_from_slice(font_data).expect("Failed to load font");
 
+    let ancho_dots = settings.label_width_mm * DOTS_PER_MM;
+    let alto_dots = settings.label_height_mm * DOTS_PER_MM;
+    let ancho_bytes = ancho_dots / 8;
+    let x_pos = settings.left_margin;
+    let x_offset = settings.x_offset;
+    let top_margin = settings.top_margin;
+
     let sizes = FontSizes {
-        normal: PxScale::from(TAMANO_NORMAL),
-        grande: PxScale::from(TAMANO_GRANDE),
-        pequeno: PxScale::from(TAMANO_PEQUENO),
-        medio: PxScale::from(TAMANO_MEDIO),
-        grande_venc: PxScale::from(TAMANO_GRANDE_VENC),
+        row_1: PxScale::from(settings.font_size_row_1),
+        row_2: PxScale::from(settings.font_size_row_2),
+        row_3: PxScale::from(settings.font_size_row_3),
+        row_4: PxScale::from(settings.font_size_row_4),
+        row_5: PxScale::from(settings.font_size_row_5),
+        row_6: PxScale::from(settings.font_size_row_6),
     };
 
-    let mut img = GrayImage::from_pixel(ANCHO_DOTS, ALTO_DOTS, Luma([255u8]));
+    let mut img = GrayImage::from_pixel(ancho_dots, alto_dots, Luma([255u8]));
 
-    let linea_alto_normal = TAMANO_NORMAL as i32 + 8;
-    let linea_alto_pequeno = TAMANO_PEQUENO as i32 + 6;
-    let linea_alto_medio = TAMANO_MEDIO as i32 + 6;
-    let linea_alto_grande_venc = TAMANO_GRANDE_VENC as i32 + 6;
+    let linea_1 = settings.font_size_row_1 as i32 + 6;
+    let linea_2 = settings.font_size_row_2 as i32 + 6;
+    let linea_3 = settings.font_size_row_3 as i32 + 6;
+    let linea_4 = settings.font_size_row_4 as i32 + 6;
+    let linea_5 = settings.font_size_row_5 as i32 + 8;
+    let _linea_6 = settings.font_size_row_6 as i32 + 8;
 
-    let mut y_pos = 15i32;
+    let mut y_pos = top_margin;
 
     draw_text_mut(
         &mut img,
         Luma([0u8]),
-        X_POS,
+        x_pos,
         y_pos,
-        sizes.pequeno,
+        sizes.row_1,
         &font,
         "Fecha de empaque:",
     );
-    y_pos += linea_alto_pequeno;
+    y_pos += linea_1;
 
     draw_text_mut(
         &mut img,
         Luma([0u8]),
-        X_POS,
+        x_pos,
         y_pos,
-        sizes.medio,
+        sizes.row_2,
         &font,
         fecha_hora,
     );
-    y_pos += linea_alto_medio;
+    y_pos += linea_2;
 
     draw_text_mut(
         &mut img,
         Luma([0u8]),
-        X_POS,
+        x_pos,
         y_pos,
-        sizes.pequeno,
+        sizes.row_3,
         &font,
         "Vence:",
     );
-    y_pos += linea_alto_pequeno;
+    y_pos += linea_3;
 
     draw_text_mut(
         &mut img,
         Luma([0u8]),
-        X_POS,
+        x_pos,
         y_pos,
-        sizes.grande_venc,
+        sizes.row_4,
         &font,
         fecha_vencimiento,
     );
-    y_pos += linea_alto_grande_venc;
+    y_pos += linea_4;
 
     draw_text_mut(
         &mut img,
         Luma([0u8]),
-        X_POS,
+        x_pos,
         y_pos,
-        sizes.normal,
+        sizes.row_5,
         &font,
         &format!("Peso: {}g", peso_g),
     );
-    y_pos += linea_alto_normal;
+    y_pos += linea_5;
 
     let precio_str = format!("${:.0}", precio_total);
     draw_text_mut(
         &mut img,
         Luma([0u8]),
-        X_POS,
+        x_pos,
         y_pos,
-        sizes.grande,
+        sizes.row_6,
         &font,
         &precio_str,
     );
 
-    let bitmap = image_to_1bit(&img);
+    let bitmap = image_to_1bit(&img, ancho_dots, alto_dots, ancho_bytes);
 
     let mut tspl = Vec::new();
     tspl.extend_from_slice(b"CLS\n");
-    tspl.extend_from_slice(b"SIZE 40 mm, 30 mm\n");
+    tspl.extend_from_slice(format!(
+        "SIZE {} mm, {} mm\n",
+        settings.label_width_mm, settings.label_height_mm
+    ).as_bytes());
     tspl.extend_from_slice(b"GAP 0, 0\n");
-    tspl.extend_from_slice(b"DENSITY 15\n");
+    tspl.extend_from_slice(format!("DENSITY {}\n", settings.density).as_bytes());
+    tspl.extend_from_slice(format!("SPEED {}\n", settings.speed).as_bytes());
 
     let header = format!(
         "BITMAP {}, 0, {}, {}, 0, ",
-        X_OFFSET, ANCHO_BYTES, ALTO_DOTS
+        x_offset, ancho_bytes, alto_dots
     );
     tspl.extend_from_slice(header.as_bytes());
     tspl.extend_from_slice(&bitmap);
@@ -136,12 +142,12 @@ pub fn render_label(
     tspl
 }
 
-fn image_to_1bit(img: &GrayImage) -> Vec<u8> {
-    let mut bitmap = Vec::with_capacity((ANCHO_BYTES * ALTO_DOTS) as usize);
+fn image_to_1bit(img: &GrayImage, ancho: u32, alto: u32, ancho_bytes: u32) -> Vec<u8> {
+    let mut bitmap = Vec::with_capacity((ancho_bytes * alto) as usize);
 
-    for y in 0..ALTO_DOTS {
-        let mut row_bytes = vec![0u8; ANCHO_BYTES as usize];
-        for x in 0..ANCHO_DOTS {
+    for y in 0..alto {
+        let mut row_bytes = vec![0u8; ancho_bytes as usize];
+        for x in 0..ancho {
             let pixel = img.get_pixel(x, y);
             let value = pixel[0];
             let bit = (value >= 128) as u8;

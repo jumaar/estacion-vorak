@@ -69,7 +69,7 @@
                             <button class="status-btn status-off" disabled>Báscula</button>
                         </div>
                         <div class="status-button" id="impresora-status">
-                            <button class="status-btn status-off" disabled>Impresora</button>
+                            <button class="status-btn status-off">Impresora</button>
                         </div>
                         <div class="status-button" id="rfid-status">
                             <button class="status-btn status-off" disabled>TAG</button>
@@ -147,6 +147,163 @@
                             </tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+        <!-- ===================== Overlay de Actualizacion ===================== -->
+        <div id="update-overlay" class="modal-overlay" style="display:none">
+            <div class="modal-card update-modal">
+                <div class="modal-header">
+                    <h2>Actualizacion Disponible</h2>
+                </div>
+                <div class="modal-body">
+                    <p>Hay una nueva version de <strong>VORAK Estacion</strong>.</p>
+                    <p>Version actual: <code id="update-current-version"></code></p>
+                    <p>Nueva version: <code id="update-latest-version"></code></p>
+                    <p class="update-warning">Debe actualizar para continuar usando el sistema.</p>
+                </div>
+                <div class="modal-footer">
+                    <button id="update-now-btn" class="btn btn-success btn-large">Actualizar Ahora</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===================== Modal Configuracion Impresora ===================== -->
+        <div id="printer-modal" class="modal-overlay" style="display:none">
+            <div class="modal-card">
+                <div class="modal-header">
+                    <h2>Configuracion de Impresora</h2>
+                    <span id="modal-conn-status" class="modal-conn-status status-off">Desconectada</span>
+                    <button id="modal-close-btn" class="modal-close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-preview-section">
+                        <div class="canvas-row">
+                            <div class="height-control">
+                                <label for="modal-ctrl-height">Alto<br>(mm)</label>
+                                <div class="stepper">
+                                    <button class="stepper-btn" data-target="modal-ctrl-height" data-step="-1">-</button>
+                                    <input type="number" id="modal-ctrl-height" min="10" max="100" value="30">
+                                    <button class="stepper-btn" data-target="modal-ctrl-height" data-step="1">+</button>
+                                </div>
+                            </div>
+                            <div id="modal-canvas-container">
+                                <canvas id="modal-canvas" width="640" height="480"></canvas>
+                            </div>
+                        </div>
+                        <div class="width-control">
+                            <label for="modal-ctrl-width">Ancho (mm)</label>
+                            <div class="stepper">
+                                <button class="stepper-btn" data-target="modal-ctrl-width" data-step="-1">-</button>
+                                <input type="number" id="modal-ctrl-width" min="10" max="58" value="40">
+                                <button class="stepper-btn" data-target="modal-ctrl-width" data-step="1">+</button>
+                            </div>
+                        </div>
+                        <div class="modal-px-info">
+                            <span id="modal-px-width">320 px</span> x <span id="modal-px-height">240 px</span>
+                            (8 dots/mm)
+                        </div>
+                    </div>
+                    <div class="modal-settings-section">
+                        <h3>Ajustes de Impresion</h3>
+                        <div class="settings-grid">
+                            <div class="settings-group">
+                                <h4>Margenes</h4>
+                                <div class="setting-row">
+                                    <label for="modal-top-margin">Margen Superior (px)</label>
+                                    <div class="stepper">
+                                        <button class="stepper-btn" data-target="modal-top-margin" data-step="-1">-</button>
+                                        <input type="number" id="modal-top-margin" min="0" max="60" value="15">
+                                        <button class="stepper-btn" data-target="modal-top-margin" data-step="1">+</button>
+                                    </div>
+                                </div>
+                                <div class="setting-row">
+                                    <label for="modal-left-margin">Margen Izquierdo (px)</label>
+                                    <div class="stepper">
+                                        <button class="stepper-btn" data-target="modal-left-margin" data-step="-1">-</button>
+                                        <input type="number" id="modal-left-margin" min="0" max="100" value="5">
+                                        <button class="stepper-btn" data-target="modal-left-margin" data-step="1">+</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="settings-group">
+                                <h4>Calor / Velocidad</h4>
+                                <div class="setting-row">
+                                    <label for="modal-density">Densidad (0-15)</label>
+                                    <div class="stepper">
+                                        <button class="stepper-btn" data-target="modal-density" data-step="-1">-</button>
+                                        <input type="number" id="modal-density" min="0" max="15" value="15">
+                                        <button class="stepper-btn" data-target="modal-density" data-step="1">+</button>
+                                    </div>
+                                    <span class="setting-hint">15 = max oscuro</span>
+                                </div>
+                                <div class="setting-row">
+                                    <label for="modal-speed">Velocidad (2-6 ips)</label>
+                                    <div class="stepper">
+                                        <button class="stepper-btn" data-target="modal-speed" data-step="-1">-</button>
+                                        <input type="number" id="modal-speed" min="2" max="6" value="4">
+                                        <button class="stepper-btn" data-target="modal-speed" data-step="1">+</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="settings-group settings-fonts">
+                                <h4>Fuentes por Fila (px)</h4>
+                                <div class="setting-row">
+                                    <label>F1 "Fecha de empaque:"</label>
+                                    <div class="stepper">
+                                        <button class="stepper-btn" data-target="modal-font-1" data-step="-1">-</button>
+                                        <input type="number" id="modal-font-1" min="8" max="72" value="20">
+                                        <button class="stepper-btn" data-target="modal-font-1" data-step="1">+</button>
+                                    </div>
+                                </div>
+                                <div class="setting-row">
+                                    <label>F2 Fecha/Hora</label>
+                                    <div class="stepper">
+                                        <button class="stepper-btn" data-target="modal-font-2" data-step="-1">-</button>
+                                        <input type="number" id="modal-font-2" min="8" max="72" value="25">
+                                        <button class="stepper-btn" data-target="modal-font-2" data-step="1">+</button>
+                                    </div>
+                                </div>
+                                <div class="setting-row">
+                                    <label>F3 "Vence:"</label>
+                                    <div class="stepper">
+                                        <button class="stepper-btn" data-target="modal-font-3" data-step="-1">-</button>
+                                        <input type="number" id="modal-font-3" min="8" max="72" value="20">
+                                        <button class="stepper-btn" data-target="modal-font-3" data-step="1">+</button>
+                                    </div>
+                                </div>
+                                <div class="setting-row">
+                                    <label>F4 Vencimiento</label>
+                                    <div class="stepper">
+                                        <button class="stepper-btn" data-target="modal-font-4" data-step="-1">-</button>
+                                        <input type="number" id="modal-font-4" min="8" max="72" value="25">
+                                        <button class="stepper-btn" data-target="modal-font-4" data-step="1">+</button>
+                                    </div>
+                                </div>
+                                <div class="setting-row">
+                                    <label>F5 "Peso: XXXg"</label>
+                                    <div class="stepper">
+                                        <button class="stepper-btn" data-target="modal-font-5" data-step="-1">-</button>
+                                        <input type="number" id="modal-font-5" min="8" max="72" value="36">
+                                        <button class="stepper-btn" data-target="modal-font-5" data-step="1">+</button>
+                                    </div>
+                                </div>
+                                <div class="setting-row">
+                                    <label>F6 "$XXX"</label>
+                                    <div class="stepper">
+                                        <button class="stepper-btn" data-target="modal-font-6" data-step="-1">-</button>
+                                        <input type="number" id="modal-font-6" min="8" max="72" value="54">
+                                        <button class="stepper-btn" data-target="modal-font-6" data-step="1">+</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="modal-test-print-btn" class="btn btn-primary">Imprimir Prueba</button>
+                    <button id="modal-save-btn" class="btn btn-success">Guardar</button>
+                    <button id="modal-cancel-btn" class="btn btn-secondary">Cerrar</button>
                 </div>
             </div>
         </div>

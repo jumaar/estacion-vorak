@@ -268,10 +268,11 @@ pub fn get_component_status(state: &AppState) -> ComponentStatus {
 
 fn start_bascula_reader(state: &Arc<AppState>, handle: &tauri::AppHandle) {
     let mut stop_guard = state.bascula_stop.lock().unwrap();
-    if stop_guard.is_none() {
-        let stop = Arc::new(AtomicBool::new(false));
-        *stop_guard = Some(stop.clone());
-        drop(stop_guard);
-        spawn_bascula_reader(state.clone(), handle.clone(), stop);
+    if let Some(ref stop) = *stop_guard {
+        stop.store(true, Ordering::Relaxed);
     }
+    let stop = Arc::new(AtomicBool::new(false));
+    *stop_guard = Some(stop.clone());
+    drop(stop_guard);
+    spawn_bascula_reader(state.clone(), handle.clone(), stop);
 }

@@ -165,6 +165,9 @@ jobs:
           gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
             --armor --export jumaar1988@hotmail.com > pages-repo/${PACKAGE_NAME}.gpg.key
 
+      - name: Add CNAME for custom domain
+        run: echo "estacion.vorak.app" > pages-repo/CNAME
+
       - name: Generate landing page
         run: |
           cat > pages-repo/index.html << 'INDEXEOF'
@@ -186,13 +189,13 @@ jobs:
             <p>Repositorio APT firmado con GPG para la instalacion y actualizacion de <strong>VORAK Estacion</strong>.</p>
 
             <h2>Agregar repositorio</h2>
-            <pre>curl -fsSL https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/vorak-estacion.gpg.key | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/vorak-estacion.gpg
-          echo "deb [signed-by=/etc/apt/trusted.gpg.d/vorak-estacion.gpg] https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }} stable main" | sudo tee /etc/apt/sources.list.d/vorak-estacion.list
+            <pre>curl -fsSL https://estacion.vorak.app/vorak-estacion.gpg.key | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/vorak-estacion.gpg
+          echo "deb [signed-by=/etc/apt/trusted.gpg.d/vorak-estacion.gpg] https://estacion.vorak.app stable main" | sudo tee /etc/apt/sources.list.d/vorak-estacion.list
           sudo apt update
           sudo apt install vorak-estacion</pre>
 
             <h2>Actualizar</h2>
-            <pre>sudo apt update && sudo apt upgrade vorak-estacion</pre>
+            <pre>sudo apt update && sudo apt install --only-upgrade vorak-estacion</pre>
 
             <p style="margin-top:30px;color:#666;font-size:0.85em;">
               Mantenido por VORAK &mdash; <a href="https://github.com/${{ github.repository }}">GitHub</a>
