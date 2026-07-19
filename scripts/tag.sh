@@ -92,7 +92,11 @@ echo "  Creando commit de actualizacion..."
 
 git add .
 
-git commit -m "Actualizacion del sistema a una nueva version v${NEW}" --no-verify
+if git diff --cached --quiet; then
+  echo "  Sin cambios nuevos — omitiendo commit."
+else
+  git commit -m "Actualizacion del sistema a una nueva version v${NEW}" --no-verify
+fi
 
 # ── Push ──────────────────────────────────────────────────────────────────────
 echo "  Subiendo commit a origin/rust..."
