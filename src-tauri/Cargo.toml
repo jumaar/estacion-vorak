@@ -23,8 +23,10 @@ imageproc = "0.25"
 ab_glyph = "0.2"
 chrono = { version = "0.4", features = ["clock"] }
 tokio = { version = "1", features = ["full"] }
-axum = { version = "0.7", features = ["ws"] }
-tower-http = { version = "0.6", features = ["fs"] }
+axum = { version = "0.8", features = ["ws", "macros"] }
 reqwest = "0.13"
-tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+tokio-rustls = "0.26"
+rustls = "0.23"
+webpki-roots = "0.26"
 futures-util = "0.3"

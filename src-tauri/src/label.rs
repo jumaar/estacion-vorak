@@ -144,7 +144,7 @@ fn image_to_1bit(img: &GrayImage) -> Vec<u8> {
         for x in 0..ANCHO_DOTS {
             let pixel = img.get_pixel(x, y);
             let value = pixel[0];
-            let bit = (value < 128) as u8;
+            let bit = (value >= 128) as u8;
             if bit == 1 {
                 let byte_idx = (x / 8) as usize;
                 let bit_idx = 7 - (x % 8) as usize;

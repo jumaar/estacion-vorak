@@ -18,7 +18,7 @@
 
 use axum::{
     body::{to_bytes, Body},
-    extract::{Request, State, WebSocketUpgrade},
+    extract::{FromRequestParts, Request, State},
     http::{
         header::{self, COOKIE, HOST, SET_COOKIE},
         HeaderMap, HeaderName, HeaderValue, StatusCode,
@@ -28,10 +28,14 @@ use axum::{
     Router,
 };
 use futures_util::{SinkExt, StreamExt};
+use rustls::{ClientConfig, RootCertStore};
+use std::sync::Arc;
+use tokio_rustls::TlsConnector;
+use tokio::io::AsyncWriteExt;
 use tokio_tungstenite::tungstenite::{
     self,
-    client::ClientRequestBuilder,
-    protocol::{frame::coding::CloseCode as TsCloseCode, CloseFrame as TsCloseFrame},
+    handshake::client::generate_key,
+    protocol::{frame::coding::CloseCode as TsCloseCode, CloseFrame as TsCloseFrame, Role},
 };
 
 const PORT: u16 = 9527;
@@ -46,12 +50,15 @@ struct ProxyState {
 
 /// Inicia el servidor proxy en segundo plano dentro del runtime de Tauri.
 ///
-/// El `bind` del socket es **síncrono** para garantizar que el puerto 9527
-/// está escuchando antes de que la ventana principal intente cargar
-/// `http://localhost:9527/login.html`.
+/// El `bind` del socket es **síncrono** (std) para garantizar que el puerto 9527
+/// está reservado antes de que la ventana principal intente cargar
+/// `http://localhost:9527/`. La conversión a `tokio::net::TcpListener` se
+/// difiere al `spawn` asíncrono de Tauri, donde ya hay reactor de Tokio.
 pub fn spawn(app_handle: tauri::AppHandle, upstream_base_url: &str) {
     let (origin, host) = parse_upstream(upstream_base_url);
 
+    // Bind síncrono: reserva el puerto inmediatamente. Si falla, abortamos
+    // antes de crear la ventana.
     let std_listener = match std::net::TcpListener::bind(("127.0.0.1", PORT)) {
         Ok(l) => l,
         Err(e) => {
@@ -59,11 +66,11 @@ pub fn spawn(app_handle: tauri::AppHandle, upstream_base_url: &str) {
             return;
         }
     };
-    // Evita el bloqueo del runtime asíncrono.
+    // El puerto ya está nuestro. Marcamos no-bloqueante para que Tokio
+    // pueda hacer polling sin bloquear el event loop.
     let _ = std_listener.set_nonblocking(true);
-    let listener =
-        tokio::net::TcpListener::from_std(std_listener).expect("from_std listener falló");
 
+    // Construcción de estado (no necesita reactor).
     let http_client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()
@@ -78,11 +85,20 @@ pub fn spawn(app_handle: tauri::AppHandle, upstream_base_url: &str) {
 
     let app = Router::new()
         .route("/api", any(proxy_handler))
-        .route("/api/*rest", any(proxy_handler))
+        .route("/api/{*rest}", any(proxy_handler))
         .fallback(static_handler)
         .with_state(state);
 
+    // Tauri::async_runtime::spawn ejecuta en el runtime de Tokio de Tauri,
+    // que ya está entrado (entered). from_std no falla aquí.
     tauri::async_runtime::spawn(async move {
+        let listener = match tokio::net::TcpListener::from_std(std_listener) {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("❌ proxy: from_std falló: {e}");
+                return;
+            }
+        };
         println!("✅ Proxy same-origin escuchando en http://localhost:{PORT}");
         if let Err(e) = axum::serve(listener, app.into_make_service()).await {
             eprintln!("❌ Error en servidor proxy: {e}");
@@ -139,7 +155,6 @@ async fn static_handler(State(state): State<ProxyState>, req: Request) -> Respon
 // -------------------- Ruta /api (HTTP + WS) --------------------
 
 async fn proxy_handler(
-    ws: Option<WebSocketUpgrade>,
     State(state): State<ProxyState>,
     req: Request,
 ) -> Response {
@@ -150,10 +165,23 @@ async fn proxy_handler(
         .unwrap_or_default();
     let cookie = req.headers().get(COOKIE).cloned();
 
-    if let Some(upgrade) = ws {
-        // Es un upgrade de WebSocket: puenteamos al upstream wss://.
-        let upstream_origin = state.upstream_origin.clone();
-        upgrade.on_upgrade(move |socket| forward_ws(socket, upstream_origin, path_query, cookie))
+    let is_ws_upgrade = req.headers().get("upgrade")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.eq_ignore_ascii_case("websocket"))
+        .unwrap_or(false);
+
+    if is_ws_upgrade {
+        let (mut parts, body) = req.into_parts();
+        match axum::extract::ws::WebSocketUpgrade::from_request_parts(&mut parts, &state).await {
+            Ok(upgrade) => {
+                let upstream_origin = state.upstream_origin.clone();
+                upgrade.on_upgrade(move |socket| forward_ws(socket, upstream_origin, path_query, cookie))
+            }
+            Err(_) => {
+                let req = Request::from_parts(parts, body);
+                proxy_http(req, &state).await
+            }
+        }
     } else {
         proxy_http(req, &state).await
     }
@@ -233,38 +261,81 @@ async fn forward_ws(
     path_query: String,
     cookie: Option<HeaderValue>,
 ) {
-    // https:// -> wss://  (http:// -> ws://)
-    let ws_origin = if upstream_origin.starts_with("https://") {
-        format!("wss://{}", &upstream_origin["https://".len()..])
-    } else if upstream_origin.starts_with("http://") {
-        format!("ws://{}", &upstream_origin["http://".len()..])
-    } else {
-        upstream_origin
-    };
-    let url = format!("{}{}", ws_origin, path_query);
+    let upstream_host = upstream_origin
+        .strip_prefix("https://")
+        .or_else(|| upstream_origin.strip_prefix("http://"))
+        .unwrap_or(&upstream_origin)
+        .to_string();
 
-    let uri: axum::http::Uri = match url.parse() {
-        Ok(u) => u,
+    // TCP + TLS con ALPN forzado a HTTP/1.1. Cloudflare Workers NO envía
+    // la respuesta 101 Switching Protocols — los frames WebSocket llegan
+    // directamente. Escribimos el handshake manual y usamos from_raw_socket
+    // para evitar que tungstenite intente parsear la respuesta HTTP.
+    let tcp = match tokio::net::TcpStream::connect((upstream_host.as_str(), 443)).await {
+        Ok(s) => s,
         Err(e) => {
-            eprintln!("❌ WS proxy: URI inválida ({url}): {e}");
+            eprintln!("❌ WS proxy: TCP falló a {upstream_host}:443: {e}");
             return;
         }
     };
 
-    let mut builder = ClientRequestBuilder::new(uri);
-    if let Some(c) = cookie {
+    let mut root_store = RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+    let mut tls_config = ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+    tls_config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    let tls_config = Arc::new(tls_config);
+
+    let tls_connector = TlsConnector::from(Arc::clone(&tls_config));
+    let domain = match rustls::pki_types::ServerName::try_from(upstream_host.clone()) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("❌ WS proxy: ServerName inválido ({upstream_host}): {e}");
+            return;
+        }
+    };
+
+    let mut tls_stream = match tls_connector.connect(domain, tcp).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("❌ WS proxy: TLS falló: {e}");
+            return;
+        }
+    };
+
+    // Handshake HTTP/1.1 manual: Cloudflare recibe la petición y establece
+    // el túnel WebSocket, pero el Worker omite la respuesta 101.
+    let key = generate_key();
+    let mut req = format!(
+        "GET {path_query} HTTP/1.1\r\n\
+         Host: {upstream_host}\r\n\
+         Origin: http://localhost:9527\r\n\
+         Upgrade: websocket\r\n\
+         Connection: Upgrade\r\n\
+         Sec-WebSocket-Key: {key}\r\n\
+         Sec-WebSocket-Version: 13\r\n"
+    );
+    if let Some(c) = &cookie {
         if let Ok(s) = c.to_str() {
-            builder = builder.with_header("cookie", s.to_string());
+            use std::fmt::Write;
+            let _ = write!(req, "Cookie: {s}\r\n");
         }
     }
+    req.push_str("\r\n");
 
-    let upstream = match tokio_tungstenite::connect_async(builder).await {
-        Ok((s, _)) => s,
-        Err(e) => {
-            eprintln!("❌ WS proxy: no se pudo conectar al upstream ({url}): {e}");
-            return;
-        }
-    };
+    if let Err(e) = tls_stream.write_all(req.as_bytes()).await {
+        eprintln!("❌ WS proxy: error enviando handshake WS: {e}");
+        return;
+    }
+
+    let upstream = tokio_tungstenite::WebSocketStream::from_raw_socket(
+        tls_stream,
+        Role::Client,
+        None,
+    )
+    .await;
 
     let (mut up_tx, mut up_rx) = upstream.split();
     let (mut down_tx, mut down_rx) = socket.split();
@@ -296,32 +367,32 @@ async fn forward_ws(
 
 fn axum_to_tungstenite(msg: axum::extract::ws::Message) -> tungstenite::Message {
     use axum::extract::ws::Message as M;
+    use tokio_tungstenite::tungstenite::Utf8Bytes as TsUtf8;
     match msg {
-        M::Text(t) => tungstenite::Message::Text(t),
+        M::Text(t) => tungstenite::Message::Text(TsUtf8::from(t.as_str())),
         M::Binary(b) => tungstenite::Message::Binary(b),
         M::Ping(b) => tungstenite::Message::Ping(b),
         M::Pong(b) => tungstenite::Message::Pong(b),
         M::Close(Some(c)) => tungstenite::Message::Close(Some(TsCloseFrame {
             code: TsCloseCode::from(c.code),
-            reason: c.reason,
+            reason: TsUtf8::from(c.reason.as_str()),
         })),
         M::Close(None) => tungstenite::Message::Close(None),
     }
 }
 
 fn tungstenite_to_axum(msg: tungstenite::Message) -> Option<axum::extract::ws::Message> {
-    use axum::extract::ws::{CloseFrame, Message as M};
+    use axum::extract::ws::{CloseFrame, Message as M, Utf8Bytes as AxUtf8};
     match msg {
-        tungstenite::Message::Text(t) => Some(M::Text(t)),
+        tungstenite::Message::Text(t) => Some(M::Text(AxUtf8::from(t.as_str()))),
         tungstenite::Message::Binary(b) => Some(M::Binary(b)),
         tungstenite::Message::Ping(b) => Some(M::Ping(b)),
         tungstenite::Message::Pong(b) => Some(M::Pong(b)),
         tungstenite::Message::Close(Some(c)) => Some(M::Close(Some(CloseFrame {
             code: c.code.into(),
-            reason: c.reason,
+            reason: AxUtf8::from(c.reason.as_str()),
         }))),
         tungstenite::Message::Close(None) => Some(M::Close(None)),
-        // Frame bruto: ignorar (recomendación de los maintainers de tungstenite).
         tungstenite::Message::Frame(_) => None,
     }
 }

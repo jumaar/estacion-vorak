@@ -131,8 +131,6 @@ function setupEventListeners() {
     if (historialBtn) {
         historialBtn.addEventListener('click', () => {
             navigateToPage('historial');
-            // Cargar productos de la estación inmediatamente después de navegar
-            setTimeout(loadProductosEstacion, 100);
         });
     }
 
@@ -444,13 +442,15 @@ async function connectWebSocket() {
     }
 
     try {
-        // Conexión same-origin al proxy (http://localhost:9527), que puentea el
-        // WebSocket a NestJS. La cookie HttpOnly (first-party) viaja automáticamente
-        // y autentica el handshake: no hace falta exponer el token en JS.
+        // Conexión same-origin al proxy (http://localhost:9527), que puentea
+        // HTTP y WebSocket a NestJS. La cookie HttpOnly (first-party) viaja
+        // automáticamente y autentica el handshake — el JWT nunca toca JS.
+        // Polling primero (HTTP normal, el proxy lo maneja con reqwest); si el
+        // upgrade a WS llega a fallar, Socket.IO se mantiene en polling.
         appState.socket = io({
             path: '/api/frigorifico/estacion/ws',
             withCredentials: true,
-            transports: ['websocket', 'polling']
+            transports: ['polling', 'websocket']
         });
 
         // --- Manejadores de eventos de Socket.IO ---
@@ -1262,45 +1262,31 @@ async function logout() {
  */
 function disconnectWebSockets() {
     return new Promise((resolve) => {
-        // Limpiar listeners de Tauri
         for (const unlisten of unlistenHandlers) {
             try { unlisten(); } catch (e) {}
         }
         unlistenHandlers = [];
 
-        const socketsToDisconnect = [];
-        if (appState.socket && appState.socket.connected) {
-            socketsToDisconnect.push(appState.socket);
-        }
-
-        if (socketsToDisconnect.length === 0) {
-            appState.socket = null;
-            console.log("No había sockets NestJS conectados, referencias limpiadas.");
+        const socket = appState.socket;
+        if (!socket) {
             resolve();
             return;
         }
 
-        let disconnectedCount = 0;
         const timeout = setTimeout(() => {
+            console.log("Timeout de desconexión WS, limpiando referencia.");
             appState.socket = null;
-            console.log("Timeout de desconexión, referencias limpiadas.");
             resolve();
-        }, 2000);
+        }, 3000);
 
-        const onDisconnect = () => {
-            disconnectedCount++;
-            if (disconnectedCount === socketsToDisconnect.length) {
-                clearTimeout(timeout);
-                appState.socket = null;
-                console.log("Todas las referencias de socket han sido limpiadas.");
-                resolve();
-            }
-        };
-
-        socketsToDisconnect.forEach(socket => {
-            socket.once('disconnect', onDisconnect);
-            socket.disconnect();
+        socket.once('disconnect', () => {
+            clearTimeout(timeout);
+            appState.socket = null;
+            console.log("Socket desconectado limpiamente del backend.");
+            resolve();
         });
+
+        socket.disconnect();
     });
 }
 
