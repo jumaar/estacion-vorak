@@ -95,6 +95,15 @@ jobs:
       group: apt-repo-pages
       cancel-in-progress: false
     steps:
+      - name: Checkout rust branch (source files)
+        uses: actions/checkout@v4
+        with:
+          ref: rust
+          path: source-repo
+          sparse-checkout: |
+            apt-repo
+          sparse-checkout-cone-mode: false
+
       - name: Clone or initialize gh-pages branch
         env:
           GH_TOKEN: ${{ github.token }}
@@ -168,41 +177,8 @@ jobs:
       - name: Add CNAME for custom domain
         run: echo "estacion.vorak.app" > pages-repo/CNAME
 
-      - name: Generate landing page
-        run: |
-          cat > pages-repo/index.html << 'INDEXEOF'
-          <!DOCTYPE html>
-          <html lang="es">
-          <head>
-            <meta charset="UTF-8">
-            <title>VORAK Estacion - APT Repository</title>
-            <style>
-              body { font-family: monospace; max-width: 720px; margin: 40px auto; padding: 20px; background: #111; color: #eee; }
-              a { color: #6cf; }
-              pre { background: #222; padding: 12px; border-radius: 6px; overflow-x: auto; }
-              code { background: #333; padding: 2px 6px; border-radius: 3px; }
-              h1 { border-bottom: 1px solid #333; padding-bottom: 8px; }
-            </style>
-          </head>
-          <body>
-            <h1>vorak-estacion APT Repository</h1>
-            <p>Repositorio APT firmado con GPG para la instalacion y actualizacion de <strong>VORAK Estacion</strong>.</p>
-
-            <h2>Agregar repositorio</h2>
-            <pre>curl -fsSL https://estacion.vorak.app/vorak-estacion.gpg.key | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/vorak-estacion.gpg
-          echo "deb [signed-by=/etc/apt/trusted.gpg.d/vorak-estacion.gpg] https://estacion.vorak.app stable main" | sudo tee /etc/apt/sources.list.d/vorak-estacion.list
-          sudo apt update
-          sudo apt install vorak-estacion</pre>
-
-            <h2>Actualizar</h2>
-            <pre>sudo apt update && sudo apt install --only-upgrade vorak-estacion</pre>
-
-            <p style="margin-top:30px;color:#666;font-size:0.85em;">
-              Mantenido por VORAK &mdash; <a href="https://github.com/${{ github.repository }}">GitHub</a>
-            </p>
-          </body>
-          </html>
-          INDEXEOF
+      - name: Copy APT repository landing page
+        run: cp source-repo/apt-repo/index.html pages-repo/index.html
 
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>VORAK Estacion - APT Repository</title>
+  <style>
+    body { font-family: monospace; max-width: 720px; margin: 40px auto; padding: 20px; background: #111; color: #eee; }
+    a { color: #6cf; }
+    h1 { border-bottom: 1px solid #333; padding-bottom: 8px; }
+    h2 { margin-top: 32px; }
+    .code-block { position: relative; margin: 12px 0; }
+    pre { background: #222; padding: 12px 48px 12px 12px; border-radius: 6px; overflow-x: auto; margin: 0; }
+    code { background: #333; padding: 2px 6px; border-radius: 3px; }
+    .copy-btn {
+      position: absolute; top: 6px; right: 6px;
+      background: #333; color: #aaa; border: 1px solid #555;
+      border-radius: 4px; padding: 4px 10px; font-size: 0.75rem;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .copy-btn:hover { background: #444; color: #fff; }
+    .copy-btn.copied { background: #10b98133; border-color: #10b981; color: #10b981; }
+  </style>
+</head>
+<body>
+  <h1>vorak-estacion APT Repository</h1>
+  <p>Repositorio APT firmado con GPG para la instalacion y actualizacion de <strong>VORAK Estacion</strong>.</p>
+
+  <h2>Agregar repositorio</h2>
+  <div class="code-block">
+    <button class="copy-btn" onclick="copiar(this)">Copiar</button>
+    <pre id="repo-setup">curl -fsSL https://estacion.vorak.app/vorak-estacion.gpg.key | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/vorak-estacion.gpg
+echo "deb [signed-by=/etc/apt/trusted.gpg.d/vorak-estacion.gpg] https://estacion.vorak.app stable main" | sudo tee /etc/apt/sources.list.d/vorak-estacion.list
+sudo apt update
+sudo apt install vorak-estacion</pre>
+  </div>
+
+  <h2>Actualizar</h2>
+  <div class="code-block">
+    <button class="copy-btn" onclick="copiar(this)">Copiar</button>
+    <pre id="repo-update">sudo apt update && sudo apt install --only-upgrade vorak-estacion</pre>
+  </div>
+
+  <p style="margin-top:30px;color:#666;font-size:0.85em;">
+    Mantenido por VORAK &mdash; <a href="https://github.com/jumaar/estacion-vorak">GitHub</a>
+  </p>
+
+  <script>
+    function copiar(btn) {
+      var pre = btn.parentElement.querySelector('pre');
+      navigator.clipboard.writeText(pre.textContent.trim()).then(function() {
+        btn.textContent = 'Copiado';
+        btn.classList.add('copied');
+        setTimeout(function() {
+          btn.textContent = 'Copiar';
+          btn.classList.remove('copied');
+        }, 2000);
+      });
+    }
+  </script>
+</body>
+</html>
