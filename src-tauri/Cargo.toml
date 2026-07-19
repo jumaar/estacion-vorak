@@ -32,6 +32,12 @@ webpki-roots = "0.26"
 futures-util = "0.3"
 tauri-plugin-store = "2.4.4"
 
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+opt-level = "s"
+
 [package.metadata.deb]
 name = "vorak-estacion"
 maintainer = "VORAK <jumaar1988@hotmail.com>"
@@ -40,11 +46,13 @@ priority = "optional"
 depends = "libwebkit2gtk-4.1-0, libssl3, libgtk-3-0, librsvg2-2, patchelf, pkexec | policykit-1"
 extended-description = "Estacion de pesaje VORAK - sistema IoT de monitoreo y control"
 assets = [
+    ["target/release/vorak-estacion", "usr/bin/vorak-estacion", "755"],
     ["deploy/postinst", "DEBIAN/postinst", "755"],
     ["deploy/vorak-estacion.desktop", "usr/share/applications/vorak-estacion.desktop", "644"],
+    ["deploy/vorak-estacion.png", "usr/share/pixmaps/vorak-estacion.png", "644"],
     ["resources/config.json", "usr/lib/vorak-estacion/resources/config.json", "644"],
     ["resources/printer_settings.json", "usr/lib/vorak-estacion/resources/printer_settings.json", "644"],
-    ["resources/vorak-estacion.service", "usr/lib/vorak-estacion/resources/vorak-estacion.service", "644"],
     ["resources/99-vorak-estacion.rules", "usr/lib/vorak-estacion/resources/99-vorak-estacion.rules", "644"],
+    ["resources/vorak-estacion.service", "usr/lib/vorak-estacion/resources/vorak-estacion.service", "644"],
     ["resources/fonts/DejaVuSans-Bold.ttf", "usr/lib/vorak-estacion/resources/fonts/DejaVuSans-Bold.ttf", "644"],
 ]
