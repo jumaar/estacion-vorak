@@ -30,4 +30,8 @@ if [ -f "${RESOURCE_DIR}/99-vorak-estacion.rules" ]; then
     udevadm trigger 2>/dev/null || true
 fi
 
+if [ -f "${RESOURCE_DIR}/setup-autologin.sh" ]; then
+    bash "${RESOURCE_DIR}/setup-autologin.sh" 2>/dev/null || true
+fi
+
 echo "=== ${APP_NAME} post-installation complete ==="

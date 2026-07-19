@@ -41,6 +41,10 @@ if [ -f "${RESOURCE_DIR}/99-vorak-estacion.rules" ]; then
     udevadm trigger || true
 fi
 
+if [ -f "${RESOURCE_DIR}/setup-autologin.sh" ]; then
+    bash "${RESOURCE_DIR}/setup-autologin.sh" || true
+fi
+
 echo "VORAK daemon configured successfully"
 "#;
 

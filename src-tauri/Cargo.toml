@@ -54,5 +54,6 @@ assets = [
     ["resources/printer_settings.json", "usr/lib/vorak-estacion/resources/printer_settings.json", "644"],
     ["resources/99-vorak-estacion.rules", "usr/lib/vorak-estacion/resources/99-vorak-estacion.rules", "644"],
     ["resources/vorak-estacion.service", "usr/lib/vorak-estacion/resources/vorak-estacion.service", "644"],
+    ["deploy/setup-autologin.sh", "usr/lib/vorak-estacion/resources/setup-autologin.sh", "644"],
     ["resources/fonts/DejaVuSans-Bold.ttf", "usr/lib/vorak-estacion/resources/fonts/DejaVuSans-Bold.ttf", "644"],
 ]
