@@ -18,13 +18,13 @@ Package: vorak-estacion
 Version: 2.0.1-1
 Architecture: amd64
 Maintainer: VORAK <jumaar1988@hotmail.com>
-Installed-Size: 11282
+Installed-Size: 11284
 Depends: libgtk-3-0, librsvg2-2, libssl3, libwebkit2gtk-4.1-0, patchelf, pkexec | policykit-1
 Filename: pool/main/vorak-estacion_2.0.1-1_amd64.deb
-Size: 3408416
-MD5sum: 675bad1d8740f1fd84cc647178211a08
-SHA1: 51063a565d1949b08a176499f119ef7fc80dc40b
-SHA256: ca9b47f0e2ffe820a067befa92858170e28f237cba62c3b072f720d6b27187db
+Size: 3410916
+MD5sum: f8ffe4def271a14a1411dc9c61153b45
+SHA1: f77f3073a804444904cedf826c5e46790cb6f55d
+SHA256: bc3158ff5185053944a514cb206cf3df4494f63b6289a838a130c6d810f43ba0
 Section: utils
 Priority: optional
 Description: Estacion de pesaje VORAK
