@@ -1,6 +1,7 @@
 mod bascula;
 mod commands;
 mod config;
+mod daemon;
 mod devices;
 mod impresora;
 mod label;
@@ -29,6 +30,7 @@ fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    daemon::ensure_installed();
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
