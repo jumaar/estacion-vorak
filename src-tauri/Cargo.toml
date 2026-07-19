@@ -41,8 +41,6 @@ depends = "libwebkit2gtk-4.1-0, libssl3, libgtk-3-0, librsvg2-2, patchelf, pkexe
 extended-description = "Estacion de pesaje VORAK - sistema IoT de monitoreo y control"
 assets = [
     ["deploy/postinst", "DEBIAN/postinst", "755"],
-    ["deploy/update-app.sh", "opt/vorak-estacion/update-app.sh", "755"],
-    ["deploy/vorak-estacion-sudo", "etc/sudoers.d/vorak-estacion", "440"],
     ["resources/config.json", "usr/lib/vorak-estacion/resources/config.json", "644"],
     ["resources/printer_settings.json", "usr/lib/vorak-estacion/resources/printer_settings.json", "644"],
     ["resources/vorak-estacion.service", "usr/lib/vorak-estacion/resources/vorak-estacion.service", "644"],

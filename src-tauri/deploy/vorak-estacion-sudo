@@ -1,1 +1,0 @@
-vorak ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart vorak-estacion, /usr/bin/systemctl stop vorak-estacion, /usr/bin/systemctl start vorak-estacion, /usr/bin/dpkg -i /tmp/vorak-estacion.deb, /usr/sbin/reboot, /usr/bin/apt-get update, /usr/bin/apt-get install --only-upgrade vorak-estacion -y, /opt/vorak-estacion/update-app.sh
