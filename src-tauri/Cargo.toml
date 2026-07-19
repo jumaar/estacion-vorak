@@ -1,6 +1,6 @@
 [package]
 name = "vorak-estacion"
-version = "2.0.0"
+version = "2.0.1"
 description = "Estacion de pesaje VORAK"
 authors = ["VORAK"]
 edition = "2021"
