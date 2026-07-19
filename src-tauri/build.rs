@@ -10,6 +10,7 @@ fn main() {
                 "print_test_label",
                 "imprimir_etiqueta",
                 "reimprimir_etiqueta",
+                "update_app",
             ]),
         ),
     )

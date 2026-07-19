@@ -16,6 +16,7 @@
     "allow-save-printer-settings",
     "allow-print-test-label",
     "allow-imprimir-etiqueta",
-    "allow-reimprimir-etiqueta"
+    "allow-reimprimir-etiqueta",
+    "allow-update-app"
   ]
 }
