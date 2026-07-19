@@ -19,14 +19,29 @@
     }
     .copy-btn:hover { background: #444; color: #fff; }
     .copy-btn.copied { background: #10b98133; border-color: #10b981; color: #10b981; }
+    .version-display {
+      text-align: center;
+      font-size: 3rem;
+      color: #e94560;
+      margin: 24px 0 4px;
+      padding: 0;
+      border: none;
+      font-weight: bold;
+    }
+    .version-label {
+      text-align: center;
+      color: #888;
+      margin: 0 0 32px;
+      font-size: 0.9rem;
+    }
   </style>
 </head>
 <body>
   <h1>vorak-estacion APT Repository</h1>
   <p>Repositorio APT firmado con GPG para la instalacion y actualizacion de <strong>VORAK Estacion</strong>.</p>
 
-  <h1 id="current-version" style="font-size:2.5rem;text-align:center;color:#e94560;margin:24px 0 8px;">...</h1>
-  <p style="text-align:center;color:#888;margin:0 0 32px;">version disponible</p>
+  <div id="current-version" class="version-display">...</div>
+  <p class="version-label">version disponible</p>
 
   <h2>Agregar repositorio</h2>
   <div class="code-block">

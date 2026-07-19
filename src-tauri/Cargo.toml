@@ -38,7 +38,7 @@ maintainer = "VORAK <jumaar1988@hotmail.com>"
 section = "utils"
 priority = "optional"
 depends = "libwebkit2gtk-4.1-0, libssl3, libgtk-3-0, librsvg2-2, patchelf, pkexec | policykit-1"
-description = "Estacion de pesaje VORAK - sistema IoT de monitoreo y control"
+extended-description = "Estacion de pesaje VORAK - sistema IoT de monitoreo y control"
 assets = [
     ["deploy/postinst", "DEBIAN/postinst", "755"],
     ["deploy/update-app.sh", "opt/vorak-estacion/update-app.sh", "755"],
