@@ -2,22 +2,23 @@
 set -e
 
 APP_NAME="vorak-estacion"
-INSTALL_DIR="/opt/${APP_NAME}"
+RESOURCE_DIR="/usr/lib/${APP_NAME}/resources"
 
 echo "=== ${APP_NAME} post-installation ==="
 
-id -u vorak &>/dev/null || useradd -r -s /bin/false vorak
+if ! id -u vorak &>/dev/null; then
+    useradd -r -m -d /home/vorak -s /bin/bash vorak
+    usermod -a -G dialout,tty vorak
+fi
 
-chown -R vorak:vorak "${INSTALL_DIR}"
-
-if [ -f "${INSTALL_DIR}/resources/vorak-estacion.service" ]; then
-    cp "${INSTALL_DIR}/resources/vorak-estacion.service" /etc/systemd/system/
+if [ -f "${RESOURCE_DIR}/vorak-estacion.service" ]; then
+    cp "${RESOURCE_DIR}/vorak-estacion.service" /etc/systemd/system/
     systemctl daemon-reload
     systemctl enable vorak-estacion
 fi
 
-if [ -f "${INSTALL_DIR}/resources/99-vorak-estacion.rules" ]; then
-    cp "${INSTALL_DIR}/resources/99-vorak-estacion.rules" /etc/udev/rules.d/
+if [ -f "${RESOURCE_DIR}/99-vorak-estacion.rules" ]; then
+    cp "${RESOURCE_DIR}/99-vorak-estacion.rules" /etc/udev/rules.d/
     udevadm control --reload-rules
     udevadm trigger
 fi

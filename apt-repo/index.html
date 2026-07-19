@@ -25,6 +25,9 @@
   <h1>vorak-estacion APT Repository</h1>
   <p>Repositorio APT firmado con GPG para la instalacion y actualizacion de <strong>VORAK Estacion</strong>.</p>
 
+  <h1 id="current-version" style="font-size:2.5rem;text-align:center;color:#e94560;margin:24px 0 8px;">...</h1>
+  <p style="text-align:center;color:#888;margin:0 0 32px;">version disponible</p>
+
   <h2>Agregar repositorio</h2>
   <div class="code-block">
     <button class="copy-btn" onclick="copiar(this)">Copiar</button>
@@ -45,6 +48,20 @@ sudo apt install vorak-estacion</pre>
   </p>
 
   <script>
+    (async function() {
+      try {
+        const resp = await fetch('https://api.github.com/repos/jumaar/estacion-vorak/releases/latest');
+        if (resp.ok) {
+          const release = await resp.json();
+          document.getElementById('current-version').textContent = release.tag_name;
+        } else {
+          document.getElementById('current-version').textContent = '-';
+        }
+      } catch {
+        document.getElementById('current-version').textContent = '-';
+      }
+    })();
+
     function copiar(btn) {
       var pre = btn.parentElement.querySelector('pre');
       navigator.clipboard.writeText(pre.textContent.trim()).then(function() {

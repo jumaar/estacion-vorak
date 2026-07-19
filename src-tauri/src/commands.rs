@@ -180,7 +180,7 @@ pub fn reimprimir_etiqueta(
 }
 
 #[tauri::command]
-pub fn update_app() -> Result<String, String> {
+pub fn update_app(app_handle: tauri::AppHandle) -> Result<String, String> {
     let status = std::process::Command::new("pkexec")
         .arg("bash")
         .arg("-c")
@@ -188,9 +188,9 @@ pub fn update_app() -> Result<String, String> {
         .status()
         .map_err(|e| format!("Error ejecutando actualizacion: {}", e))?;
 
-    if status.success() {
-        Ok("actualizado".into())
-    } else {
-        Err("La actualizacion no se completo. Verifique la conexion.".into())
+    if !status.success() {
+        return Err("La actualizacion no se completo. Verifique la conexion.".into());
     }
+
+    app_handle.restart();
 }

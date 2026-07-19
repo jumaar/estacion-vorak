@@ -24,6 +24,20 @@ if ! [[ "$NEW" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
+if git rev-parse -q --verify "refs/tags/v${NEW}" > /dev/null 2>&1; then
+  echo "  El tag v${NEW} ya existe — cancelado."
+  exit 1
+fi
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo ""
+  echo "  ── Cambios pendientes detectados ──"
+  git status --short
+  echo "  ────────────────────────────────────"
+  echo "  Estos cambios se incluiran en el commit de release."
+  echo ""
+fi
+
 echo ""
 echo "  Actualizando archivos a v${NEW}..."
 
@@ -35,17 +49,25 @@ sed -i "s/VORAK v[0-9]\+\.[0-9]\+\.[0-9]\+/VORAK v${NEW}/g" "$README"
 
 npm version "$NEW" --no-git-tag-version --allow-same-version 2>/dev/null
 
-git add "$CARGO_TOML" src-tauri/Cargo.lock "$TAURI_CONF" "$ROOT_PKG" "$README"
-
-git commit -m "v${NEW}" --no-verify
-
-git tag "v${NEW}"
+echo "  Refrescando Cargo.lock..."
+(cd src-tauri && cargo generate-lockfile 2>/dev/null) || true
 
 echo ""
-echo "  v${NEW} creado. Subiendo a origin..."
-echo ""
+echo "  Preparando commit de actualizacion..."
 
-git push origin rust --tags
+git add .
+
+git commit -m "Actualizacion del sistema a una nueva version v${NEW}" --no-verify
+
+echo "  Subiendo commit a origin/rust..."
+git push origin rust
+
+echo ""
+echo "  Creando tag anotado v${NEW}..."
+git tag -a "v${NEW}" -m "Release v${NEW}"
+
+echo "  Subiendo tag a origin..."
+git push origin "v${NEW}"
 
 echo ""
 echo "  Listo. El pipeline release.yml se disparara con el tag v${NEW}."

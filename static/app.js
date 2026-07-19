@@ -460,24 +460,26 @@ async function checkForUpdate() {
 
 async function handleUpdateNow() {
     const btn = document.getElementById('update-now-btn');
+    const errEl = document.getElementById('update-error');
     if (btn) {
         btn.disabled = true;
         btn.textContent = 'Actualizando...';
     }
+    if (errEl) errEl.style.display = 'none';
 
     try {
         if (window.__TAURI__) {
-            const result = await window.__TAURI__.invoke('update_app');
-            if (result === 'actualizado') {
-                window.location.reload();
-            }
+            await window.__TAURI__.invoke('update_app');
         }
     } catch (e) {
         if (btn) {
             btn.disabled = false;
             btn.textContent = 'Actualizar Ahora';
         }
-        showMessage('Error al actualizar: ' + e, 'error');
+        if (errEl) {
+            errEl.textContent = 'Error al actualizar: ' + e;
+            errEl.style.display = 'block';
+        }
     }
 }
 

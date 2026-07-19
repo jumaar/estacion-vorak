@@ -1263,3 +1263,12 @@ body {
     border: 1px solid rgba(233, 69, 96, 0.3);
     border-radius: 8px;
 }
+.update-error-msg {
+    color: #ff6b6b;
+    margin-top: 12px;
+    padding: 10px;
+    background: rgba(255, 107, 107, 0.1);
+    border: 1px solid rgba(255, 107, 107, 0.3);
+    border-radius: 6px;
+    font-size: 0.9rem;
+}

@@ -70,6 +70,7 @@ jobs:
   github-release:
     name: Create GitHub Release
     needs: build-deb
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -90,6 +91,7 @@ jobs:
   update-apt-repo:
     name: Update APT Repository
     needs: build-deb
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     concurrency:
       group: apt-repo-pages
@@ -104,13 +106,16 @@ jobs:
             apt-repo
           sparse-checkout-cone-mode: false
 
+      - name: Install APT repository tools
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev apt-utils
+
       - name: Clone or initialize gh-pages branch
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           REPO_URL="https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
 
-          if git ls-remote --exit-code --heads origin gh-pages > /dev/null 2>&1; then
+          if git ls-remote --exit-code --heads "$REPO_URL" gh-pages > /dev/null 2>&1; then
             echo "Cloning existing gh-pages branch..."
             git clone --depth 1 --branch gh-pages "$REPO_URL" pages-repo
           else
