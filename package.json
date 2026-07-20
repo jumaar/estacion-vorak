@@ -1,6 +1,6 @@
 {
   "name": "vorak-estacion",
-  "version": "2.0.65",
+  "version": "2.0.66",
   "private": true,
   "scripts": {
     "dev": "tauri dev",
