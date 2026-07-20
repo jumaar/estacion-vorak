@@ -530,27 +530,33 @@ async function handleUpdateNow() {
 
     let progressListener = null;
 
-    try {
-        if (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen) {
-            const unlisten = await window.__TAURI__.event.listen('update-progress', (event) => {
-                const msg = event.payload || '';
-                if (statusText && msg) statusText.textContent = msg;
-                if (logEl && msg) {
-                    const line = document.createElement('div');
-                    line.className = 'log-line';
-                    if (msg.toLowerCase().includes('error') || msg.includes('[stderr]')) {
-                        line.classList.add('log-error');
-                    } else if (msg.toLowerCase().includes('completad') || msg.toLowerCase().includes('reiniciando')) {
-                        line.classList.add('log-success');
-                    }
-                    line.textContent = msg;
-                    logEl.appendChild(line);
-                    logEl.scrollTop = logEl.scrollHeight;
-                }
-            });
-            progressListener = unlisten;
-        }
+    const listenFn = (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen)
+        ? window.__TAURI__.event.listen.bind(window.__TAURI__.event)
+        : (window.__TAURI__ && window.__TAURI__.listen)
+            ? window.__TAURI__.listen.bind(window.__TAURI__)
+            : null;
 
+    if (listenFn) {
+        const unlisten = await listenFn('update-progress', (event) => {
+            const msg = (event && event.payload) ? event.payload : event;
+            if (statusText && msg) statusText.textContent = msg;
+            if (logEl && msg) {
+                const line = document.createElement('div');
+                line.className = 'log-line';
+                if (String(msg).toLowerCase().includes('error') || String(msg).includes('[stderr]')) {
+                    line.classList.add('log-error');
+                } else if (String(msg).toLowerCase().includes('completad') || String(msg).toLowerCase().includes('reiniciando')) {
+                    line.classList.add('log-success');
+                }
+                line.textContent = msg;
+                logEl.appendChild(line);
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+        });
+        progressListener = unlisten;
+    }
+
+    try {
         if (window.__TAURI__) {
             await window.__TAURI__.invoke('update_app');
         }

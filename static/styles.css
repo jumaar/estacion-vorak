@@ -275,6 +275,7 @@ body {
 /* Estilos específicos para Login */
 .auth-container {
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
     min-height: 100vh;
@@ -509,15 +510,16 @@ body {
     display: flex;
     align-items: center;
     gap: calc(var(--spacing-unit));
+    justify-content: center;
 }
 
 .app-footer-dashboard {
-    margin-left: auto;
+    padding-top: calc(var(--spacing-unit) * 2);
 }
 
 .footer-logo {
-    width: 24px;
-    height: 24px;
+    width: 48px;
+    height: 48px;
     image-rendering: auto;
 }
 
@@ -528,10 +530,9 @@ body {
     white-space: nowrap;
 }
 
-/* Centrado en login e historial */
+/* Espaciado en login e historial */
 .auth-container .app-footer,
 .app-footer-historial {
-    justify-content: center;
     padding-top: calc(var(--spacing-unit) * 2);
 }
 
