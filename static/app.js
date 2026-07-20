@@ -530,14 +530,8 @@ async function handleUpdateNow() {
 
     let progressListener = null;
 
-    const listenFn = (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen)
-        ? window.__TAURI__.event.listen.bind(window.__TAURI__.event)
-        : (window.__TAURI__ && window.__TAURI__.listen)
-            ? window.__TAURI__.listen.bind(window.__TAURI__)
-            : null;
-
-    if (listenFn) {
-        const unlisten = await listenFn('update-progress', (event) => {
+    if (window.__TAURI__ && window.__TAURI__.listen) {
+        const unlisten = await window.__TAURI__.listen('update-progress', (event) => {
             const msg = (event && event.payload) ? event.payload : event;
             if (statusText && msg) statusText.textContent = msg;
             if (logEl && msg) {

@@ -180,9 +180,10 @@ pub fn reimprimir_etiqueta(
 }
 
 #[tauri::command]
-pub fn update_app(app_handle: tauri::AppHandle) -> Result<String, String> {
-    use std::io::{BufRead, BufReader};
-    use std::process::{Command, Stdio};
+pub async fn update_app(app_handle: tauri::AppHandle) -> Result<String, String> {
+    use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::process::Command;
 
     let emit = |msg: &str| {
         let _ = app_handle.emit("update-progress", msg);
@@ -204,9 +205,9 @@ pub fn update_app(app_handle: tauri::AppHandle) -> Result<String, String> {
 
     if let Some(stdout) = child.stdout.take() {
         let app_handle = app_handle.clone();
-        std::thread::spawn(move || {
-            let reader = BufReader::new(stdout);
-            for line in reader.lines().flatten() {
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
                 let _ = app_handle.emit("update-progress", line);
             }
         });
@@ -214,9 +215,9 @@ pub fn update_app(app_handle: tauri::AppHandle) -> Result<String, String> {
 
     if let Some(stderr) = child.stderr.take() {
         let app_handle = app_handle.clone();
-        std::thread::spawn(move || {
-            let reader = BufReader::new(stderr);
-            for line in reader.lines().flatten() {
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
                 let msg = format!("[stderr] {}", line);
                 let _ = app_handle.emit("update-progress", msg);
             }
@@ -227,6 +228,7 @@ pub fn update_app(app_handle: tauri::AppHandle) -> Result<String, String> {
 
     let status = child
         .wait()
+        .await
         .map_err(|e| format!("Error esperando actualizacion: {}", e))?;
 
     if !status.success() {
