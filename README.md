@@ -1,6 +1,6 @@
 # estacion-vorak
 
-Estacion de pesaje IoT — VORAK v2.0.62
+Estacion de pesaje IoT — VORAK v2.0.63
 
 ## Publicar una nueva version
 
