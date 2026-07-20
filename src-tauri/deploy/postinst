@@ -6,19 +6,6 @@ RESOURCE_DIR="/usr/lib/${APP_NAME}/resources"
 
 echo "=== ${APP_NAME} post-installation ==="
 
-if ! id -u vorak &>/dev/null; then
-    useradd -r -m -d /home/vorak -s /bin/bash vorak 2>/dev/null || true
-fi
-for grp in dialout tty; do
-    getent group "$grp" &>/dev/null && usermod -a -G "$grp" vorak 2>/dev/null || true
-done
-
-if [ -f "${RESOURCE_DIR}/vorak-estacion.service" ]; then
-    cp "${RESOURCE_DIR}/vorak-estacion.service" /etc/systemd/system/ 2>/dev/null || true
-    systemctl daemon-reload 2>/dev/null || true
-    systemctl enable vorak-estacion 2>/dev/null || true
-fi
-
 if [ -f "/usr/share/applications/vorak-estacion.desktop" ]; then
     mkdir -p /etc/xdg/autostart 2>/dev/null || true
     cp "/usr/share/applications/vorak-estacion.desktop" /etc/xdg/autostart/ 2>/dev/null || true
@@ -30,8 +17,5 @@ if [ -f "${RESOURCE_DIR}/99-vorak-estacion.rules" ]; then
     udevadm trigger 2>/dev/null || true
 fi
 
-if [ -f "${RESOURCE_DIR}/setup-autologin.sh" ]; then
-    bash "${RESOURCE_DIR}/setup-autologin.sh" 2>/dev/null || true
-fi
-
 echo "=== ${APP_NAME} post-installation complete ==="
+echo "La app se abrira automaticamente al iniciar sesion del usuario actual."

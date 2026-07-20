@@ -24,8 +24,7 @@
       "resources/config.json",
       "resources/printer_settings.json",
       "resources/fonts/*",
-      "resources/99-vorak-estacion.rules",
-      "resources/vorak-estacion.service"
+      "resources/99-vorak-estacion.rules"
     ],
     "linux": {
       "deb": {

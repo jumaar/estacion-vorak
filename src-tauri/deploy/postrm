@@ -1,0 +1,21 @@
+#!/bin/bash
+set -e
+
+APP_NAME="vorak-estacion"
+
+echo "=== ${APP_NAME} post-removal ==="
+
+rm -f /etc/xdg/autostart/vorak-estacion.desktop 2>/dev/null || true
+rm -f /etc/udev/rules.d/99-vorak-estacion.rules 2>/dev/null || true
+rm -f /etc/systemd/system/vorak-estacion.service 2>/dev/null || true
+
+if command -v udevadm &>/dev/null; then
+    udevadm control --reload-rules 2>/dev/null || true
+    udevadm trigger 2>/dev/null || true
+fi
+
+if command -v systemctl &>/dev/null; then
+    systemctl daemon-reload 2>/dev/null || true
+fi
+
+echo "=== ${APP_NAME} removido completamente ==="
