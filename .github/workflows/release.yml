@@ -116,6 +116,7 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.build-deb.outputs.tag_name }}
           files: ./*.deb
           generate_release_notes: true
         continue-on-error: true
@@ -124,6 +125,7 @@ jobs:
         if: steps.create_release.outcome == 'failure'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.build-deb.outputs.tag_name }}
           files: ./*.deb
           generate_release_notes: true
 
@@ -234,4 +236,4 @@ jobs:
           keep_files: false
           user_name: 'github-actions[bot]'
           user_email: 'github-actions[bot]@users.noreply.github.com'
-          commit_message: 'apt: publish ${{ env.PACKAGE_NAME }} ${{ github.ref_name }}'
+          commit_message: 'apt: publish ${{ env.PACKAGE_NAME }} ${{ needs.build-deb.outputs.tag_name }}'
