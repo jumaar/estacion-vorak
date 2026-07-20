@@ -12,6 +12,7 @@ name: CI/CD - Release
 
 on:
   push:
+    branches: [rust]
     tags:
       - 'v*.*.*'
   workflow_dispatch:
