@@ -431,6 +431,16 @@ async function handleLogin(event) {
     }
 }
 
+function compareVersion(a, b) {
+    const pa = a.split('.').map(Number);
+    const pb = b.split('.').map(Number);
+    for (let i = 0; i < 3; i++) {
+        if (pa[i] > pb[i]) return 1;
+        if (pa[i] < pb[i]) return -1;
+    }
+    return 0;
+}
+
 async function checkForUpdate() {
     try {
         if (!window.__TAURI__) return false;
@@ -445,7 +455,7 @@ async function checkForUpdate() {
         const release = await response.json();
         const latestVersion = release.tag_name.replace(/^v/, '');
 
-        if (latestVersion !== currentVersion) {
+        if (compareVersion(latestVersion, currentVersion) > 0) {
             document.getElementById('update-current-version').textContent = currentVersion;
             document.getElementById('update-latest-version').textContent = latestVersion;
             document.getElementById('update-overlay').style.display = 'flex';
@@ -461,13 +471,42 @@ async function checkForUpdate() {
 async function handleUpdateNow() {
     const btn = document.getElementById('update-now-btn');
     const errEl = document.getElementById('update-error');
+    const progressContainer = document.getElementById('update-progress-container');
+    const statusText = document.getElementById('update-status-text');
+    const logEl = document.getElementById('update-log');
+
     if (btn) {
         btn.disabled = true;
         btn.textContent = 'Actualizando...';
+        btn.style.opacity = '0.6';
     }
     if (errEl) errEl.style.display = 'none';
+    if (progressContainer) progressContainer.style.display = 'block';
+    if (logEl) logEl.innerHTML = '';
+
+    let progressListener = null;
 
     try {
+        if (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen) {
+            const unlisten = await window.__TAURI__.event.listen('update-progress', (event) => {
+                const msg = event.payload || '';
+                if (statusText && msg) statusText.textContent = msg;
+                if (logEl && msg) {
+                    const line = document.createElement('div');
+                    line.className = 'log-line';
+                    if (msg.toLowerCase().includes('error') || msg.includes('[stderr]')) {
+                        line.classList.add('log-error');
+                    } else if (msg.toLowerCase().includes('completad') || msg.toLowerCase().includes('reiniciando')) {
+                        line.classList.add('log-success');
+                    }
+                    line.textContent = msg;
+                    logEl.appendChild(line);
+                    logEl.scrollTop = logEl.scrollHeight;
+                }
+            });
+            progressListener = unlisten;
+        }
+
         if (window.__TAURI__) {
             await window.__TAURI__.invoke('update_app');
         }
@@ -475,10 +514,16 @@ async function handleUpdateNow() {
         if (btn) {
             btn.disabled = false;
             btn.textContent = 'Actualizar Ahora';
+            btn.style.opacity = '1';
         }
         if (errEl) {
             errEl.textContent = 'Error al actualizar: ' + e;
             errEl.style.display = 'block';
+        }
+        if (statusText) statusText.textContent = 'Error en la actualizacion';
+    } finally {
+        if (progressListener) {
+            try { progressListener(); } catch (_) {}
         }
     }
 }

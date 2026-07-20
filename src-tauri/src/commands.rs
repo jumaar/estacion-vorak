@@ -3,7 +3,7 @@ use crate::impresora::PrintJob;
 use crate::state::{AppState, PrinterSettings};
 use chrono::{Datelike, Local, Timelike};
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Emitter, State};
 
 fn mes_abreviado(m: u32) -> &'static str {
     match m {
@@ -181,16 +181,60 @@ pub fn reimprimir_etiqueta(
 
 #[tauri::command]
 pub fn update_app(app_handle: tauri::AppHandle) -> Result<String, String> {
-    let status = std::process::Command::new("pkexec")
-        .arg("bash")
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+
+    let emit = |msg: &str| {
+        let _ = app_handle.emit("update-progress", msg);
+    };
+
+    emit("Iniciando actualizacion...");
+    emit("Se solicitara permiso de administrador (pkexec).");
+
+    let mut cmd = Command::new("pkexec");
+    cmd.arg("bash")
         .arg("-c")
         .arg("apt-get update && apt-get install --only-upgrade vorak-estacion -y")
-        .status()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd
+        .spawn()
         .map_err(|e| format!("Error ejecutando actualizacion: {}", e))?;
 
+    if let Some(stdout) = child.stdout.take() {
+        let app_handle = app_handle.clone();
+        std::thread::spawn(move || {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines().flatten() {
+                let _ = app_handle.emit("update-progress", line);
+            }
+        });
+    }
+
+    if let Some(stderr) = child.stderr.take() {
+        let app_handle = app_handle.clone();
+        std::thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            for line in reader.lines().flatten() {
+                let msg = format!("[stderr] {}", line);
+                let _ = app_handle.emit("update-progress", msg);
+            }
+        });
+    }
+
+    emit("Descargando e instalando paquetes...");
+
+    let status = child
+        .wait()
+        .map_err(|e| format!("Error esperando actualizacion: {}", e))?;
+
     if !status.success() {
+        emit("La actualizacion no se completo. Verifique la conexion.");
         return Err("La actualizacion no se completo. Verifique la conexion.".into());
     }
+
+    emit("Actualizacion completada. Reiniciando aplicacion...");
 
     app_handle.restart();
 }
