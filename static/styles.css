@@ -501,6 +501,38 @@ body {
     display: flex;
     justify-content: center;
     gap: calc(var(--spacing-unit) * 2);
+    align-items: center;
+}
+
+/* Footer de la app (logo + version) */
+.app-footer {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing-unit));
+}
+
+.app-footer-dashboard {
+    margin-left: auto;
+}
+
+.footer-logo {
+    width: 24px;
+    height: 24px;
+    image-rendering: auto;
+}
+
+.footer-version {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 0.8rem;
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+}
+
+/* Centrado en login e historial */
+.auth-container .app-footer,
+.app-footer-historial {
+    justify-content: center;
+    padding-top: calc(var(--spacing-unit) * 2);
 }
 
 /* Estilos específicos para Historial */

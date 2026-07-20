@@ -65,6 +65,7 @@ function initializeApp() {
     }
 
     displayStationInfo();
+    updateAppFooter();
 }
 
 // Mostrar una página SPA (toggle de la clase .active)
@@ -208,12 +209,20 @@ function displayStationInfo() {
         }
         
         if (lastConnectionElement) {
-            // Formatear la fecha de última conexión
             if (estacion.ultima_conexion) {
                 const date = new Date(estacion.ultima_conexion);
                 lastConnectionElement.textContent = `Última conexión: ${date.toLocaleString()}`;
             } else {
                 lastConnectionElement.textContent = 'Última conexión: N/A';
+            }
+        }
+
+        const softwareVersionElement = document.getElementById('software-version');
+        if (softwareVersionElement) {
+            if (estacion.version_software != null) {
+                softwareVersionElement.textContent = `Versión: ${estacion.version_software}`;
+            } else {
+                softwareVersionElement.textContent = 'Versión: N/A';
             }
         }
     }
@@ -339,6 +348,40 @@ window.onloadTurnstileCallback = initTurnstile;
 // (waitForSessionEstablishment se eliminó: al migrar a SPA no hay recarga de página
 // y la cookie HttpOnly queda disponible inmediatamente tras el login.)
 
+// Obtener la version del software como string semver (ej: "2.0.4")
+async function getSoftwareVersion() {
+    try {
+        if (window.__TAURI__) {
+            const config = await window.__TAURI__.invoke('get_config');
+            if (config.app_version) {
+                return config.app_version;
+            }
+        }
+    } catch (e) {
+        console.error('Error obteniendo version del software:', e);
+    }
+    return '0.0.0';
+}
+
+// Actualizar el footer con la version y logo en todas las paginas
+async function updateAppFooter() {
+    let version = '---';
+    try {
+        if (window.__TAURI__) {
+            const config = await window.__TAURI__.invoke('get_config');
+            if (config.app_version) {
+                version = 'v' + config.app_version;
+            }
+        }
+    } catch (e) {
+        console.error('Error obteniendo version para footer:', e);
+    }
+    ['login', 'dashboard', 'historial'].forEach(function(page) {
+        var el = document.getElementById('footer-version-' + page);
+        if (el) el.textContent = version;
+    });
+}
+
 // Manejar login
 async function handleLogin(event) {
     if (event) event.preventDefault();
@@ -372,7 +415,8 @@ async function handleLogin(event) {
             },
             credentials: 'include', // ✅ IMPORTANTE: Envía y recibe cookies
             body: JSON.stringify({
-                turnstileToken: turnstileToken
+                turnstileToken: turnstileToken,
+                version_software: await getSoftwareVersion()
             })
         });
 
