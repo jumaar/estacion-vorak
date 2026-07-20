@@ -142,3 +142,19 @@ Priority: optional
 Description: Estacion de pesaje VORAK
  Estacion de pesaje VORAK - sistema IoT de monitoreo y control
 
+Package: vorak-estacion
+Version: 2.0.63-1
+Architecture: amd64
+Maintainer: VORAK <jumaar1988@hotmail.com>
+Installed-Size: 11355
+Depends: libgtk-3-0, librsvg2-2, libssl3, libwebkit2gtk-4.1-0, patchelf, pkexec | policykit-1
+Filename: pool/main/vorak-estacion_2.0.63-1_amd64.deb
+Size: 3441228
+MD5sum: 14efa3dd6fab160b70b0a66a53c8f1fc
+SHA1: efc1caa1fc6dbd6a00713e51ea8a1b613c019d31
+SHA256: 977e05fe3a868a40bfe152df808fb7392dfc03d5fa29c0e7bf87741aec3d8b2e
+Section: utils
+Priority: optional
+Description: Estacion de pesaje VORAK
+ Estacion de pesaje VORAK - sistema IoT de monitoreo y control
+
