@@ -72,6 +72,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Wait to mitigate transient GitHub API 503 errors
+        run: sleep 15
+
       - name: Download .deb artifact
         uses: actions/download-artifact@v4
         with:
@@ -79,6 +82,15 @@ jobs:
           path: ./
 
       - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./*.deb
+          generate_release_notes: true
+        continue-on-error: true
+
+      - name: Retry release if failed
+        if: steps.create_release.outcome == 'failure'
         uses: softprops/action-gh-release@v2
         with:
           files: ./*.deb
