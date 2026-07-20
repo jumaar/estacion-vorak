@@ -98,11 +98,7 @@ else
   git commit -m "Actualizacion del sistema a una nueva version v${NEW}" --no-verify
 fi
 
-# ── Push ──────────────────────────────────────────────────────────────────────
-echo "  Subiendo commit a origin/rust..."
-git push origin rust
-
-# ── Tag ───────────────────────────────────────────────────────────────────────
+# ── Tag (primero, para que al pushear la rama el workflow lo detecte) ────────
 echo ""
 echo "  Creando tag anotado v${NEW}..."
 git tag -a "v${NEW}" -m "Release v${NEW}"
@@ -110,6 +106,10 @@ git tag -a "v${NEW}" -m "Release v${NEW}"
 echo "  Subiendo tag a origin..."
 git push origin "v${NEW}"
 
+# ── Push ──────────────────────────────────────────────────────────────────────
+echo "  Subiendo commit a origin/rust..."
+git push origin rust
+
 echo ""
-echo "  Listo. El pipeline release.yml se disparara con el tag v${NEW}."
+echo "  Listo. El pipeline release.yml se disparara con el push a rust."
 echo ""

@@ -1,8 +1,8 @@
 # .github/workflows/release.yml
-# CI/CD pipeline para la rama rust: compila .deb, publica GitHub Release y
-# mantiene un repositorio APT firmado con GPG en GitHub Pages.
+# CI/CD pipeline: compila .deb en cada push a rust, publica GitHub Release y
+# actualiza repositorio APT solo si el commit tiene un tag v*.*.*.
 #
-# Disparador: push de tag v*.*.* en la rama rust.
+# Disparador: push a la rama rust.
 #
 # Secrets requeridos en GitHub (Settings → Secrets → Actions):
 #   GPG_PRIVATE_KEY   clave privada GPG en formato ASCII-armored
@@ -13,8 +13,6 @@ name: CI/CD - Release
 on:
   push:
     branches: [rust]
-    tags:
-      - 'v*.*.*'
   workflow_dispatch:
 
 permissions:
@@ -31,11 +29,28 @@ jobs:
   build-deb:
     name: Build .deb
     runs-on: ubuntu-latest
+    outputs:
+      is_release: ${{ steps.taginfo.outputs.is_release }}
+      tag_name: ${{ steps.taginfo.outputs.tag_name }}
     steps:
       - name: Checkout repository (rust branch)
         uses: actions/checkout@v4
         with:
           ref: rust
+          fetch-depth: 0
+
+      - name: Detect if commit has a release tag
+        id: taginfo
+        run: |
+          TAG=$(git tag --points-at HEAD --list 'v*.*.*' | head -1)
+          if [ -n "$TAG" ]; then
+            echo "is_release=true" >> $GITHUB_OUTPUT
+            echo "tag_name=$TAG" >> $GITHUB_OUTPUT
+            echo "Commit has release tag: $TAG"
+          else
+            echo "is_release=false" >> $GITHUB_OUTPUT
+            echo "No release tag on this commit — build only"
+          fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -82,7 +97,7 @@ jobs:
   # ── Job 2: Crea GitHub Release y adjunta el .deb ─────────────────────────
   github-release:
     name: Create GitHub Release
-    if: startsWith(github.ref, 'refs/tags/')
+    if: needs.build-deb.outputs.is_release == 'true'
     needs: build-deb
     runs-on: ubuntu-latest
     permissions:
@@ -115,7 +130,7 @@ jobs:
   # ── Job 3: Actualiza repositorio APT en GitHub Pages ─────────────────────
   update-apt-repo:
     name: Update APT Repository
-    if: startsWith(github.ref, 'refs/tags/')
+    if: needs.build-deb.outputs.is_release == 'true'
     needs: build-deb
     runs-on: ubuntu-latest
     concurrency:
