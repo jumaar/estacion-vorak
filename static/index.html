@@ -176,14 +176,16 @@
                     <p>Nueva version: <code id="update-latest-version"></code></p>
                     <p class="update-warning">Debe actualizar para continuar usando el sistema.</p>
                     <p id="update-error" class="update-error-msg" style="display:none"></p>
-                    <div id="update-progress-container" class="update-progress-container" style="display:none">
-                        <div class="update-spinner"></div>
-                        <p id="update-status-text" class="update-status-text">Preparando actualizacion...</p>
-                        <div id="update-log" class="update-log"></div>
-                    </div>
                 </div>
                 <div class="modal-footer">
                     <button id="update-now-btn" class="btn btn-success btn-large">Actualizar Ahora</button>
+                </div>
+                <div id="update-progress-container" class="update-progress-container" style="display:none">
+                    <div class="update-progress-head">
+                        <div class="update-spinner"></div>
+                        <p id="update-status-text" class="update-status-text">Preparando actualizacion...</p>
+                    </div>
+                    <div id="update-log" class="update-log"></div>
                 </div>
             </div>
         </div>

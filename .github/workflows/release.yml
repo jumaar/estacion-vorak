@@ -39,19 +39,33 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust dependencies
+      - name: Cache cargo-deb binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-deb
+          key: cargo-deb-${{ runner.os }}-v1
+
+      - name: Cache apt packages
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: >
+            libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev
+            librsvg2-dev patchelf dpkg-dev libudev-dev
+          version: 1.0
+
+      - name: Cache Rust dependencies + target/
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          cache-targets: true
 
-      - name: Install Tauri system dependencies
+      - name: Install cargo-deb (skip if cached)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev \
-            librsvg2-dev patchelf dpkg-dev libudev-dev
-
-      - name: Install cargo-deb
-        run: cargo install cargo-deb
+          if ! command -v cargo-deb &>/dev/null; then
+            cargo install cargo-deb
+          else
+            echo "cargo-deb found in cache, skipping install"
+          fi
 
       - name: Build release binary and package .deb
         working-directory: src-tauri
